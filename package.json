@@ -4,14 +4,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/background.js --bundle --format=esm --platform=browser --outfile=dist/background.js",
-    "watch": "npm run build -- --watch",
     "test-page": "python3 -m http.server 8000 --directory test"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^1.9.0"
-  },
-  "devDependencies": {
-    "esbuild": "^0.24.0"
   }
 }

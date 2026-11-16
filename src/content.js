@@ -233,6 +233,10 @@
 
     async function ask(stage) {
       thinking();
+      if (settings.mode !== "live") {
+        await new Promise((r) => setTimeout(r, 700)); // a beat so it feels like the judge is thinking
+        return globalThis.gicScriptedTurn({ stage, item, profile, transcript });
+      }
       const res = await chrome.runtime.sendMessage({ type: "judge", stage, item, profile, transcript });
       if (!res?.ok) {
         dock.innerHTML = `<div class="error">${esc(res?.error || "Something went wrong.")}</div>
@@ -283,7 +287,7 @@
     }
 
     function showVerdict(turn) {
-      const label = { buy: "Case made. Approved.", wait: "Sleep on it.", skip: "Not this time." }[turn.verdict] || "Verdict";
+      const label = globalThis.gicVerdictTitles?.[turn.verdict] || "Verdict";
       dock.innerHTML = `
         <div class="verdict v-${esc(turn.verdict)}">
           <div class="verdict-label">${label}</div>

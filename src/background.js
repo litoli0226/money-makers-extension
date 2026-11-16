@@ -1,9 +1,7 @@
-// Service worker: the only place that talks to Claude.
-// The content script sends { type: "judge", ... } and gets back one judge turn.
+// Service worker. Only used in "live" mode: asks a model on OpenRouter for one
+// judge turn. In "scripted" mode (the default) content.js never calls this.
 
-import Anthropic from "@anthropic-ai/sdk";
-
-const MODEL = "claude-opus-5-5";
+const DEFAULT_MODEL = "anthropic/claude-haiku-5.5";
 
 const SYSTEM_PROMPT = `You are the Judge in "Guilty if Charged", a browser extension that holds a short, playful trial before someone buys something online. The shopper is the defendant and defends the purchase. You are blunt but funny, like a TV judge who is secretly on the shopper's side. You are never cruel, never shame them, and never moralize.
 
@@ -17,7 +15,8 @@ Rules:
 - Only reference goals, rules and numbers that appear in the profile. Never invent figures.
 - If the profile has no goal, judge against value and urgency instead.
 - verdict must be "none" during "rebut", and during "open" unless skip_trial is true.
-- suggestion is an empty string unless verdict is not "none".`;
+- suggestion is an empty string unless verdict is not "none".
+- Reply with only the JSON object.`;
 
 const TURN_SCHEMA = {
   type: "object",
@@ -33,14 +32,9 @@ const TURN_SCHEMA = {
 
 async function judgeTurn({ stage, item, profile, transcript }) {
   const { settings = {} } = await chrome.storage.local.get("settings");
-  if (!settings.apiKey) {
-    throw new Error("No API key yet. Add one on the extension's settings page.");
+  if (!settings.openrouterKey) {
+    throw new Error("Live mode needs an OpenRouter key. Add one in settings, or switch back to scripted mode.");
   }
-
-  const client = new Anthropic({
-    apiKey: settings.apiKey,
-    dangerouslyAllowBrowser: true, // OK for a prototype. Use a small proxy before anyone else installs this.
-  });
 
   const caseFile = {
     stage,
@@ -51,25 +45,35 @@ async function judgeTurn({ stage, item, profile, transcript }) {
     transcript,
   };
 
-  const response = await client.beta.messages.create({
-    model: MODEL,
-    max_tokens: 4000,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    output_config: {
-      effort: "low", // short turns at checkout, so keep latency down
-      format: { type: "json_schema", schema: TURN_SCHEMA },
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${settings.openrouterKey}`,
+      "Content-Type": "application/json",
+      "X-Title": "Guilty if Charged",
     },
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: JSON.stringify(caseFile, null, 2) }],
+    body: JSON.stringify({
+      model: settings.model || DEFAULT_MODEL,
+      max_tokens: 2000,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: JSON.stringify(caseFile, null, 2) },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: { name: "judge_turn", strict: true, schema: TURN_SCHEMA },
+      },
+    }),
   });
 
-  if (response.stop_reason === "refusal") {
-    throw new Error("The judge declined this one. Try rephrasing your defense.");
-  }
-  const textBlock = response.content.find((b) => b.type === "text");
-  if (!textBlock) throw new Error("The judge said nothing. Try again.");
-  return JSON.parse(textBlock.text);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error?.message || `OpenRouter error ${res.status}`);
+
+  const content = body.choices?.[0]?.message?.content || "";
+  // Some models wrap JSON in code fences or add a sentence. Grab the object.
+  const match = content.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("The judge mumbled. Try again or pick another model.");
+  return JSON.parse(match[0]);
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {

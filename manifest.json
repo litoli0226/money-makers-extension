@@ -3,11 +3,14 @@
   "name": "Guilty if Charged",
   "version": "0.1.0",
   "description": "Puts your online shopping on trial before you check out.",
-  "permissions": ["storage"],
-  "host_permissions": ["https://api.anthropic.com/*"],
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://openrouter.ai/*"
+  ],
   "background": {
-    "service_worker": "dist/background.js",
-    "type": "module"
+    "service_worker": "src/background.js"
   },
   "content_scripts": [
     {
@@ -16,7 +19,10 @@
         "https://www.amazon.ca/*",
         "http://localhost/*"
       ],
-      "js": ["src/content.js"],
+      "js": [
+        "src/script.js",
+        "src/content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
