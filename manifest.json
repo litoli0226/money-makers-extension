@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Guilty if Charged",
+  "version": "0.1.0",
+  "description": "Puts your online shopping on trial before you check out.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://api.anthropic.com/*"],
+  "background": {
+    "service_worker": "dist/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.amazon.com/*",
+        "https://www.amazon.ca/*",
+        "http://localhost/*"
+      ],
+      "js": ["src/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Guilty if Charged",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html"
+}

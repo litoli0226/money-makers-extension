@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: -apple-system, "Segoe UI", sans-serif; width: 300px; margin: 0; padding: 14px; color: #1f2937; }
+    h2 { margin: 0 0 8px; font-size: 16px; }
+    .stat { font-size: 28px; font-weight: 800; }
+    .sub { color: #6b7280; font-size: 13px; margin-bottom: 12px; }
+    ul { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+    li { padding: 6px 0; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-between; gap: 8px; }
+    li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    a { color: #1f2937; font-size: 13px; display: inline-block; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h2>Guilty if Charged</h2>
+  <div class="stat" id="kept">$0</div>
+  <div class="sub" id="summary">kept so far</div>
+  <ul id="history"></ul>
+  <a href="#" id="settings">Settings</a>
+  <script src="popup.js"></script>
+</body>
+</html>

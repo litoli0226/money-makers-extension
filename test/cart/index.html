@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Mock cart</title>
+<style>body{font-family:sans-serif;max-width:700px;margin:40px auto}.sc-list-item{border-bottom:1px solid #ddd;padding:12px 0}</style></head>
+<body>
+<h1>Shopping Cart (mock)</h1>
+<p>Uses the same IDs and classes as Amazon's cart so the content script can be tested offline.</p>
+<div id="sc-active-cart">
+  <div class="sc-list-item" data-asin="B0TEST0001" data-price="429.99" data-quantity="1">
+    <span class="sc-product-title">Dyson Supersonic Hair Dryer</span> · <span class="sc-product-price">$429.99</span>
+  </div>
+  <div class="sc-list-item" data-asin="B0TEST0002" data-price="64.00" data-quantity="1">
+    <span class="sc-product-title">Oversized Fleece Hoodie (4th one)</span> · <span class="sc-product-price">$64.00</span>
+  </div>
+</div>
+<p>Subtotal: <span id="sc-subtotal-amount-activecart">$493.99</span></p>
+<form onsubmit="event.preventDefault(); document.getElementById('done').textContent='Checkout went through (mock).'">
+  <input type="submit" name="proceedToRetailCheckout" value="Proceed to checkout">
+</form>
+<p id="done"></p>
+</body></html>
