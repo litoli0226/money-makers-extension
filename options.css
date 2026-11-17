@@ -58,6 +58,10 @@ textarea { resize: vertical; }
 .dev { box-shadow: none; border-style: dashed; border-color: var(--line); }
 .dev summary { cursor: pointer; font-weight: 700; color: var(--muted); }
 
+.reset-row { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
+.btn-small { font: inherit; font-weight: 700; font-size: 14px; padding: 8px 14px; border-radius: 999px; cursor: pointer; background: #fff; color: var(--ink); border: 2px solid var(--ink); }
+#resetStatus { font-size: 13px; font-weight: 700; color: #1f9d6b; }
+
 .actions { display: flex; align-items: center; gap: 14px; margin-top: 24px; }
 .btn {
   font: inherit; font-weight: 800; font-size: 17px; padding: 14px 26px; border-radius: 999px; cursor: pointer;

@@ -3,6 +3,12 @@ document.getElementById("settings").onclick = (e) => {
   chrome.runtime.openOptionsPage();
 };
 
+document.getElementById("clear").onclick = async (e) => {
+  e.preventDefault();
+  await chrome.storage.local.set({ history: [], recess: {} });
+  location.reload();
+};
+
 const OUTCOME_LABELS = {
   kept: "kept",
   bought: "bought",

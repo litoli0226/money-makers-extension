@@ -33,6 +33,11 @@ chrome.storage.local.get({ settings: {} }).then(({ settings }) => {
   syncChips();
 });
 
+document.getElementById("reset").addEventListener("click", async () => {
+  await chrome.storage.local.set({ history: [], recess: {} });
+  document.getElementById("resetStatus").textContent = "Cleared. Fresh docket.";
+});
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const data = Object.fromEntries(new FormData(form));
