@@ -35,7 +35,7 @@ chrome.storage.local.get({ settings: {} }).then(({ settings }) => {
 
 document.getElementById("reset").addEventListener("click", async () => {
   await chrome.storage.local.set({ history: [], recess: {} });
-  document.getElementById("resetStatus").textContent = "Cleared. Fresh docket.";
+  document.getElementById("resetStatus").textContent = "History cleared.";
 });
 
 form.addEventListener("submit", async (e) => {
@@ -44,6 +44,6 @@ form.addEventListener("submit", async (e) => {
   data.neverSites = data.neverSites.split(",").map((s) => s.trim()).filter(Boolean);
   data.onboarded = true;
   await chrome.storage.local.set({ settings: data });
-  status.textContent = "Court is open. Go shop (responsibly).";
+  status.textContent = "Saved.";
   setTimeout(() => (status.textContent = ""), 3000);
 });

@@ -12,19 +12,18 @@
       <img class="hero-judge" src="judge.svg" alt="" />
       <div>
         <p class="kicker">Guilty if Charged</p>
-        <h1>Welcome to court</h1>
-        <p class="lede">Judge Penny pops in when you're about to check out and asks a couple of questions. That's it. One minute of setup. Everything stays in this browser.</p>
+        <h1>Set up your court</h1>
+        <p class="lede">When you're about to check out, Judge Penny and Prosecutor Pinch hold a quick hearing. This takes a minute, and everything stays in this browser.</p>
       </div>
     </header>
 
     <form id="form">
       <section class="card">
-        <h2><span class="step">1</span> What brings you to court?</h2>
+        <h2><span class="step">1.</span> What brings you to court?</h2>
         <div class="choices">
           <label class="choice">
             <input type="radio" name="purpose" value="goal" checked />
             <span class="choice-body">
-              <span class="choice-emoji" aria-hidden="true">🎯</span>
               <span class="choice-title">Saving for something</span>
               <span class="choice-sub">A trip, a laptop, a rainy-day fund</span>
             </span>
@@ -32,7 +31,6 @@
           <label class="choice">
             <input type="radio" name="purpose" value="conscious" />
             <span class="choice-body">
-              <span class="choice-emoji" aria-hidden="true">🧘</span>
               <span class="choice-title">Just being more money-conscious</span>
               <span class="choice-sub">No big goal, I just want to think twice</span>
             </span>
@@ -69,7 +67,7 @@
       </section>
 
       <section class="card">
-        <h2><span class="step">2</span> Give the judge some ammo <small>all optional</small></h2>
+        <h2><span class="step">2.</span> Context for the hearing <small>all optional</small></h2>
         <label>Monthly fun budget <small>Money for treating yourself, not rent or groceries.</small>
           <span class="money"><input name="monthlyBudget" type="number" min="0" step="1" placeholder="300" /></span>
         </label>
@@ -79,7 +77,7 @@
       </section>
 
       <section class="card">
-        <h2><span class="step">3</span> When should court stay closed?</h2>
+        <h2><span class="step">3.</span> When should court stay closed?</h2>
         <label>Never on these sites <small>Comma separated</small>
           <input name="neverSites" placeholder="walmart, instacart" />
         </label>
@@ -115,7 +113,7 @@
       </details>
 
       <div class="actions">
-        <button type="submit" class="btn">Open the courtroom</button>
+        <button type="submit" class="btn">Save</button>
         <span id="status" role="status"></span>
       </div>
     </form>
