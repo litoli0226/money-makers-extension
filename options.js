@@ -1,11 +1,36 @@
 const form = document.getElementById("form");
 const status = document.getElementById("status");
+const cutBack = form.elements.cutBack;
+
+function showPurpose() {
+  const purpose = form.elements.purpose.value;
+  for (const el of document.querySelectorAll(".purpose-fields")) el.hidden = el.dataset.purpose !== purpose;
+}
+
+function syncChips() {
+  const picked = cutBack.value.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  for (const chip of document.querySelectorAll(".chip")) chip.classList.toggle("on", picked.includes(chip.textContent));
+}
+
+for (const radio of form.elements.purpose) radio.addEventListener("change", showPurpose);
+cutBack.addEventListener("input", syncChips);
+document.getElementById("chips").addEventListener("click", (e) => {
+  const chip = e.target.closest(".chip");
+  if (!chip) return;
+  let picked = cutBack.value.split(",").map((s) => s.trim()).filter(Boolean);
+  picked = picked.includes(chip.textContent) ? picked.filter((p) => p !== chip.textContent) : [...picked, chip.textContent];
+  cutBack.value = picked.join(", ");
+  syncChips();
+});
 
 chrome.storage.local.get({ settings: {} }).then(({ settings }) => {
   for (const el of form.elements) {
     if (!el.name || settings[el.name] == null) continue;
-    el.value = Array.isArray(settings[el.name]) ? settings[el.name].join(", ") : settings[el.name];
+    if (el.type === "radio") el.checked = el.value === settings[el.name];
+    else el.value = Array.isArray(settings[el.name]) ? settings[el.name].join(", ") : settings[el.name];
   }
+  showPurpose();
+  syncChips();
 });
 
 form.addEventListener("submit", async (e) => {
@@ -14,6 +39,6 @@ form.addEventListener("submit", async (e) => {
   data.neverSites = data.neverSites.split(",").map((s) => s.trim()).filter(Boolean);
   data.onboarded = true;
   await chrome.storage.local.set({ settings: data });
-  status.textContent = "Saved. Court is ready.";
-  setTimeout(() => (status.textContent = ""), 2500);
+  status.textContent = "Court is open. Go shop (responsibly).";
+  setTimeout(() => (status.textContent = ""), 3000);
 });

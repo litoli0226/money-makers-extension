@@ -2,68 +2,120 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Guilty if Charged · Setup</title>
-  <style>
-    body { font-family: -apple-system, "Segoe UI", sans-serif; max-width: 560px; margin: 32px auto; padding: 0 16px; color: #1f2937; }
-    h1 { margin-bottom: 4px; }
-    p.lede { color: #6b7280; margin-top: 0; }
-    fieldset { border: 1px solid #e5e7eb; border-radius: 10px; margin: 16px 0; padding: 12px 16px; }
-    legend { font-weight: 700; padding: 0 6px; }
-    label { display: block; margin: 10px 0 4px; font-weight: 600; font-size: 14px; }
-    small { display: block; color: #6b7280; font-weight: 400; }
-    input, textarea, select { width: 100%; box-sizing: border-box; font: inherit; padding: 8px; border: 1px solid #d1d5db; border-radius: 8px; }
-    button { font: inherit; padding: 10px 16px; border-radius: 8px; border: none; background: #1f2937; color: #fff; cursor: pointer; }
-    #status { margin-left: 10px; color: #15803d; }
-  </style>
+  <link rel="stylesheet" href="options.css" />
 </head>
 <body>
-  <h1>Set up your court</h1>
-  <p class="lede">One-time setup. Everything is optional, and it all stays in this browser.</p>
+  <main>
+    <header class="hero">
+      <img class="hero-judge" src="judge.svg" alt="" />
+      <div>
+        <p class="kicker">Guilty if Charged</p>
+        <h1>Welcome to court</h1>
+        <p class="lede">Judge Penny pops in when you're about to check out and asks a couple of questions. That's it. One minute of setup. Everything stays in this browser.</p>
+      </div>
+    </header>
 
-  <form id="form">
-    <fieldset>
-      <legend>What are you saving for?</legend>
-      <label>Goal <small>e.g. "Japan trip"</small></label>
-      <input name="goalName" />
-      <label>Goal amount ($)</label>
-      <input name="goalAmount" type="number" min="0" step="1" />
-      <label>Saved toward it so far ($)</label>
-      <input name="savedSoFar" type="number" min="0" step="1" />
-      <label>Monthly fun budget ($) <small>Money for treating yourself, not rent or groceries.</small></label>
-      <input name="monthlyBudget" type="number" min="0" step="1" />
-      <label>Your own rules <small>e.g. "Extra income goes to the goal first." The judge will quote these back at you.</small></label>
-      <textarea name="rules" rows="3"></textarea>
-    </fieldset>
+    <form id="form">
+      <section class="card">
+        <h2><span class="step">1</span> What brings you to court?</h2>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="purpose" value="goal" checked />
+            <span class="choice-body">
+              <span class="choice-emoji" aria-hidden="true">🎯</span>
+              <span class="choice-title">Saving for something</span>
+              <span class="choice-sub">A trip, a laptop, a rainy-day fund</span>
+            </span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="purpose" value="conscious" />
+            <span class="choice-body">
+              <span class="choice-emoji" aria-hidden="true">🧘</span>
+              <span class="choice-title">Just being more money-conscious</span>
+              <span class="choice-sub">No big goal, I just want to think twice</span>
+            </span>
+          </label>
+        </div>
 
-    <fieldset>
-      <legend>When should court stay closed?</legend>
-      <label>Never trigger on these sites <small>Comma separated, e.g. walmart, instacart</small></label>
-      <input name="neverSites" />
-      <label>Skip purchases under ($)</label>
-      <input name="skipUnder" type="number" min="0" step="1" placeholder="25" />
-    </fieldset>
+        <div class="purpose-fields" data-purpose="goal">
+          <label>What are you saving for?
+            <input name="goalName" placeholder="Japan trip" />
+          </label>
+          <div class="two">
+            <label>Goal amount
+              <span class="money"><input name="goalAmount" type="number" min="0" step="1" placeholder="3000" /></span>
+            </label>
+            <label>Saved so far <small>optional</small>
+              <span class="money"><input name="savedSoFar" type="number" min="0" step="1" placeholder="800" /></span>
+            </label>
+          </div>
+        </div>
 
-    <fieldset>
-      <legend>Judge</legend>
-      <label>Mode</label>
-      <select name="mode">
-        <option value="scripted">Scripted (no AI, free)</option>
-        <option value="live">Live AI through OpenRouter</option>
-      </select>
-      <label>OpenRouter API key <small>Only needed for live mode. Stored locally in chrome.storage. Fine for testing, not for a public release.</small></label>
-      <input name="openrouterKey" type="password" autocomplete="off" />
-      <label>Model <small>Any OpenRouter model ID. Prices are per million tokens (input / output). A full trial costs well under a cent on any of these.</small></label>
-      <input name="model" list="models" placeholder="anthropic/claude-haiku-5.5" />
-      <datalist id="models">
-        <option value="anthropic/claude-haiku-5.5">Claude Haiku 5.5 · $0.10 / $0.50</option>
-        <option value="deepseek/deepseek-v4-flash">DeepSeek V4 Flash · $0.09 / $0.18</option>
-        <option value="openai/gpt-5-nano">GPT-5 nano · $0.05 / $0.40</option>
-        <option value="google/gemini-3.1-flash-lite">Gemini 3.1 Flash Lite · $0.25 / $1.50</option>
-      </datalist>
-    </fieldset>
+        <div class="purpose-fields" data-purpose="conscious" hidden>
+          <label>Anything you want to spend less on? <small>optional</small>
+            <input name="cutBack" placeholder="takeout, clothes, gadgets" />
+          </label>
+          <div class="chips" id="chips">
+            <button type="button" class="chip">clothes</button>
+            <button type="button" class="chip">takeout</button>
+            <button type="button" class="chip">gadgets</button>
+            <button type="button" class="chip">beauty</button>
+            <button type="button" class="chip">subscriptions</button>
+            <button type="button" class="chip">games</button>
+          </div>
+        </div>
+      </section>
 
-    <button type="submit">Save</button><span id="status"></span>
-  </form>
+      <section class="card">
+        <h2><span class="step">2</span> Give the judge some ammo <small>all optional</small></h2>
+        <label>Monthly fun budget <small>Money for treating yourself, not rent or groceries.</small>
+          <span class="money"><input name="monthlyBudget" type="number" min="0" step="1" placeholder="300" /></span>
+        </label>
+        <label>Your own rules <small>The judge will quote these back at you.</small>
+          <textarea name="rules" rows="2" placeholder="Extra income goes to savings first."></textarea>
+        </label>
+      </section>
+
+      <section class="card">
+        <h2><span class="step">3</span> When should court stay closed?</h2>
+        <label>Never on these sites <small>Comma separated</small>
+          <input name="neverSites" placeholder="walmart, instacart" />
+        </label>
+        <label>Skip anything under
+          <span class="money"><input name="skipUnder" type="number" min="0" step="1" placeholder="25" /></span>
+        </label>
+      </section>
+
+      <details class="card dev">
+        <summary>Prototype settings</summary>
+        <label>Judge mode
+          <select name="mode">
+            <option value="scripted">Scripted (no AI, free)</option>
+            <option value="live">Live AI through OpenRouter</option>
+          </select>
+        </label>
+        <label>OpenRouter API key <small>Live mode only. Stored in chrome.storage on this computer.</small>
+          <input name="openrouterKey" type="password" autocomplete="off" />
+        </label>
+        <label>Model <small>Any OpenRouter model ID. Prices per million tokens, in / out.</small>
+          <input name="model" list="models" placeholder="anthropic/claude-haiku-5.5" />
+          <datalist id="models">
+            <option value="anthropic/claude-haiku-5.5">Claude Haiku 5.5 · $0.10 / $0.50</option>
+            <option value="deepseek/deepseek-v4-flash">DeepSeek V4 Flash · $0.09 / $0.18</option>
+            <option value="openai/gpt-5-nano">GPT-5 nano · $0.05 / $0.40</option>
+            <option value="google/gemini-3.1-flash-lite">Gemini 3.1 Flash Lite · $0.25 / $1.50</option>
+          </datalist>
+        </label>
+      </details>
+
+      <div class="actions">
+        <button type="submit" class="btn">Open the courtroom</button>
+        <span id="status" role="status"></span>
+      </div>
+    </form>
+  </main>
   <script src="options.js"></script>
 </body>
 </html>

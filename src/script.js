@@ -1,28 +1,30 @@
-// Scripted judge: no AI. Builds each judge turn from canned lines plus what we
-// scraped from the page and the user's settings. Same output shape as the live
-// judge in background.js, so content.js doesn't care which one answered.
+// Scripted judge: no AI. Builds each turn from canned lines plus what we scraped
+// from the page and the user's settings. Same output shape as the live judge in
+// background.js, so content.js doesn't care which one answered.
 //
-// Writers: all the copy lives in LINES below. Edit freely.
+// Tone: playful, never guilt-trippy. Judge Penny is a TV judge who's secretly on
+// your side. Writers: all the copy lives in LINES below. Edit freely.
 
 (() => {
   const LINES = {
-    necessity: (i) => `${i.short}? That's a necessity, not a crime. Case dismissed. Go on.`,
-    openLate: (i) => `It's ${i.time}. Nothing good has ever been bought after midnight. Exhibit A: ${i.short}, ${i.price}.${i.context} Convince me this can't wait until morning.`,
-    openDay: (i) => `Court is in session. Exhibit A: ${i.short}, ${i.price}.${i.context} Walk me through why you need this today.`,
+    necessity: (i) => `${i.short}? Counselor, that's a necessity, not a crime. Case dismissed! Off you go.`,
+    openLate: (i) =>
+      `Court is in session, and it's ${i.time}. Fun fact: nothing great has ever been bought after midnight. ${i.short}, ${i.price}.${i.context} Make me believe this can't wait until you've had coffee.`,
+    openDay: (i) => `All rise! Well, stay seated, it's the internet. Exhibit A: ${i.short}, ${i.price}.${i.context} So, what's the story here?`,
 
     rebut: {
-      broken: (i) => `Replacing something that broke is a fair argument. But is ${i.short} the replacement, or the upgrade you've been eyeing?`,
-      sale: () => `"It's on sale" is how stores get you. Would you buy it at full price?`,
-      deserve: (i) => `Rough week, I hear you. But will ${i.short} still feel like a reward a month from now?`,
-      gift: () => `Generous of you. Is this what they actually want, or what you'd want?`,
-      default: (i) => `Noted for the record.${i.ruleQuote} Will you want ${i.short} just as much tomorrow morning?`,
+      broken: (i) => `Ooh, a strong opening. Replacing something broken is a classic. But be honest: is ${i.short} the replacement, or the glow-up?`,
+      sale: () => `Ah, "it's on sale." The oldest trick in the store. Would you still want it at full price?`,
+      deserve: (i) => `Rough week? The court sends a virtual hug. But will ${i.short} still feel like a treat a month from now?`,
+      gift: () => `Look at you, being generous. Is it what they actually asked for, or what you'd want?`,
+      default: (i) => `Noted for the record.${i.ruleQuote}${i.focusQuote} Quick gut check: will you want ${i.short} just as much tomorrow morning?`,
     },
 
-    verdictTitle: { buy: "Case made. Approved.", wait: "Sleep on it.", skip: "Not this time." },
+    verdictTitle: { buy: "Approved!", wait: "Sleep on it", skip: "Overruled" },
     verdictSay: {
-      buy: (i) => `Fine. You made your case. ${i.short} is approved. Enjoy it, and don't make me regret this.`,
-      wait: (i) => `Not a no. Not a yes either. ${i.short} will still be there tomorrow.`,
-      skip: (i) => `I'm not convinced, counselor.${i.goalLine} Put the wallet down.`,
+      buy: (i) => `The court is convinced! ${i.short} is approved. Go enjoy it, and tell your friends I'm a fair judge.`,
+      wait: (i) => `Not a no, not a yes. ${i.short} isn't going anywhere, and you'll know more tomorrow.`,
+      skip: (i) => `I'm not buying it, and neither should you.${i.winLine}`,
     },
   };
 
@@ -63,9 +65,14 @@
       const left = Math.max(goal.target - (goal.saved_so_far || 0), 0);
       if (left > 0) context += ` Or ${Math.round((total / left) * 100)}% of what's left for ${goal.name}.`;
     }
-    if (item.items?.length > 1) context += ` And that's just one of ${item.items.length} things in your cart.`;
+    if (item.items?.length > 1) context += ` Plus ${item.items.length - 1} other thing${item.items.length > 2 ? "s" : ""} in the cart. I see you.`;
 
     const rule = (profile.personal_rules || "").split(/\n|\.\s/).map((s) => s.trim()).filter(Boolean)[0];
+    const focus = (profile.cutting_back_on || "").trim();
+
+    let winLine = "";
+    if (total != null && goal?.name) winLine = ` Skip it and ${money(total)} goes toward ${goal.name}.`;
+    else if (total != null) winLine = ` Skip it and ${money(total)} stays right where it is: with you.`;
 
     return {
       short: shortName(item.label),
@@ -73,8 +80,9 @@
       time: now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
       late: hour >= 23 || hour < 5,
       context,
-      ruleQuote: rule ? ` Your own rule says: "${rule}."` : "",
-      goalLine: goal?.name && total != null ? ` Skipping this puts ${money(total)} toward ${goal.name}.` : "",
+      ruleQuote: rule ? ` Your own rule says: "${rule.replace(/\.$/, "")}."` : "",
+      focusQuote: !rule && focus ? ` You told me you're trying to spend less on ${focus}.` : "",
+      winLine,
     };
   }
 
@@ -84,11 +92,11 @@
     if (verdict === "wait" && daysToBF > 0 && daysToBF <= 21) {
       return `Black Friday is in ${daysToBF} day${daysToBF === 1 ? "" : "s"} (${bf.toDateString()}). Check the price again then.`;
     }
-    if (verdict === "wait") return "Leave it in your cart for 48 hours. If you still want it, come back.";
+    if (verdict === "wait") return "Leave it in your cart for 48 hours. Still want it? Come back and it's yours.";
     if (verdict === "skip" && profile.goal?.name && item.total != null) {
-      return `Move ${money(item.total)} to your ${profile.goal.name} fund instead.`;
+      return `Move ${money(item.total)} into your ${profile.goal.name} fund instead. Future you says thanks.`;
     }
-    if (verdict === "skip") return "Look for a cheaper version, or a used one.";
+    if (verdict === "skip") return "Hunting for a cheaper or secondhand version counts as a win too.";
     return "";
   }
 

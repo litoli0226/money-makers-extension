@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "echo 'No build step needed. Load this folder in chrome://extensions (Load unpacked).'",
-    "test-page": "python3 -m http.server 8000 --directory test"
+    "test-page": "python3 -m http.server 8000 --directory test",
+    "preview": "python3 -m http.server 8765"
   }
 }

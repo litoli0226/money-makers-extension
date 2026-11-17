@@ -19,6 +19,10 @@ No build step.
 
 After editing any file, click reload on the extension in `chrome://extensions`, then refresh the shopping page.
 
+## Preview without installing
+
+`npm run preview`, then open http://localhost:8765/test/cart/preview.html. It fakes the Chrome storage API with a sample profile so you can see the summons and hearing in any browser. Handy for the Figma folks.
+
 ## How it's built
 
 | File | Job |
@@ -36,6 +40,7 @@ The trial flow is `open` → defense 1 → `rebut` → defense 2 → `verdict`. 
 ## Known gaps
 
 - **API key in the browser (live mode).** OK for team testing, not for a release. Before anyone outside the team installs it, put a small proxy (e.g. a Cloudflare Worker) in front of the API.
-- **Amazon selectors will drift.** They're kept in lists at the top of the scrape functions in `content.js`. Check them against live pages.
+- **Amazon selectors.** Product page selectors were checked on live amazon.com (Nov 2026). Cart rows use Amazon's `data-producttitle` / `data-price` attributes. The cart subtotal, checkout button and checkout page are still unchecked.
+- **Selectors will drift.** They're kept in lists at the top of the scrape functions in `content.js`. Check them against live pages.
 - **Amazon only.** Other stores need their own selectors. A generic fallback (look for buttons labelled "checkout" or "place order") is possible but less reliable.
 - **Live mode JSON.** Not every OpenRouter model follows the JSON schema. The four on the settings page do.
