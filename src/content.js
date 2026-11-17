@@ -62,7 +62,8 @@
     return title ? { items: [{ title, price, category }], total: price } : null;
   }
 
-  // Cart rows carry data-producttitle / data-price / data-quantity / data-itemcategory.
+  // Cart rows carry data-producttitle / data-price / data-quantity (checked on live amazon.com/cart, Nov 2026).
+  // Subtotal is #sc-subtotal-amount-buybox; Proceed to checkout is input[name=proceedToRetailCheckout].
   // Only read rows inside the active cart: "Saved for later" uses the same row markup.
   function scrapeCart() {
     const seen = new Set();
@@ -77,7 +78,6 @@
         title,
         price: money(row.dataset.price) ?? money(firstText([".a-price .a-offscreen", ".sc-product-price"], row)),
         quantity: parseInt(row.dataset.quantity, 10) || 1,
-        category: row.dataset.itemcategory || "",
       });
     }
     const sum = items.reduce((t, i) => t + (i.price || 0) * i.quantity, 0);
