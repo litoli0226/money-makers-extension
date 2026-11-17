@@ -114,7 +114,7 @@
       (el) => el.children.length <= 2 && /^\s*(order total|total)\s*:?\s*$/i.test(el.textContent)
     );
     for (const el of labels) {
-      const row = el.closest("tr, li, .a-row, [class*=row], div");
+      const row = el.closest(".order-summary-grid, tr, li, .a-row, [class*=row], div");
       const n = money(row?.textContent.replace(el.textContent, ""));
       if (n) return n;
     }
@@ -123,14 +123,22 @@
 
   // Order page markup isn't verified yet, so fall back to text matching.
   function scrapeCheckout() {
-    const total =
-      money(firstText([".grand-total-price", "#subtotals-marketplace-table .grand-total-price", "[data-testid='order-summary-total']"])) ??
-      totalByLabel();
+    // Checked on live amazon.com Place Your Order page (Nov 2026). Two tables exist: a hidden
+    // USD "marketplace" one and the visible "transactional" one in the shopper's currency.
+    const totalText = firstText([
+      "#subtotals-transactional-table .grand-total-cell",
+      "#subtotals-marketplace-table .grand-total-cell",
+      ".grand-total-cell",
+      ".grand-total-price",
+      "[data-testid='order-summary-total']",
+    ]);
+    const total = money(totalText) ?? totalByLabel();
+    const currency = (totalText.match(/\b(USD|CAD|EUR|GBP|AUD)\b/) || [])[1];
     const titles = [...document.querySelectorAll(".item-title, .lineitem-title-text")]
       .map((el) => el.textContent.trim())
       .filter(Boolean);
     const items = titles.length ? titles.map((title) => ({ title })) : [{ title: "Your order" }];
-    return { items, total };
+    return { items, total, currency };
   }
 
   function scrapeItem() {
@@ -195,7 +203,7 @@
   document.documentElement.appendChild(host);
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-  const fmt = (n) => (n == null ? "" : `$${Number(n).toFixed(2)}`);
+  const fmt = (n, cur) => (n == null ? "" : `$${Number(n).toFixed(2)}${cur && cur !== "USD" ? ` ${cur}` : ""}`);
 
   function clearUI() {
     layer.innerHTML = "";
@@ -264,7 +272,7 @@
           <p class="summons-sub">Judge Penny would like a quick word about</p>
           <div class="summons-item">
             <span class="summons-item-name">${esc(item.label)}</span>
-            ${item.total != null ? `<span class="summons-item-price">${fmt(item.total)}</span>` : ""}
+            ${item.total != null ? `<span class="summons-item-price">${fmt(item.total, item.currency)}</span>` : ""}
           </div>
           ${note ? `<p class="summons-note">${esc(note)}</p>` : ""}
           <button class="btn btn-big" data-act="court">Take it to court <span class="btn-hint">about 30 sec</span></button>
@@ -309,7 +317,7 @@
           <div class="exhibit">
             <span class="exhibit-tag">Exhibit A</span>
             <span class="exhibit-title">${esc(item.label)}</span>
-            <span class="exhibit-price">${fmt(item.total)}</span>
+            <span class="exhibit-price">${fmt(item.total, item.currency)}</span>
             ${budgetLine(item, profile)}
           </div>
           <div class="transcript" id="transcript"></div>
