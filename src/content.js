@@ -20,9 +20,32 @@
     "#submitOrderButtonId input",
     "[data-gic-buy]", // test page
   ];
+  // Fallback: match the button's visible label. Covers "Place your order in CAD" etc.
+  const BUY_TEXT = /\b(proceed to (retail )?checkout|place (your )?order|buy now|continue to checkout)\b/i;
 
   let pendingButton = null; // the buy button we intercepted
   let allowNextClick = false;
+
+  const log = (...args) => console.log("[GIC]", ...args);
+
+  function labelOf(el) {
+    const ids = (el.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean);
+    const labelled = ids.map((id) => document.getElementById(id)?.textContent || "").join(" ");
+    // Amazon wraps <input> in <span class="a-button"> with the text in a sibling span.
+    const wrapper = el.closest(".a-button")?.textContent || "";
+    return [el.value, el.getAttribute("aria-label"), labelled, el.textContent, wrapper].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  function findBuyButton(target) {
+    const bySelector = target.closest?.(BUY_SELECTORS.join(","));
+    if (bySelector) return bySelector;
+    const clickable = target.closest?.("input[type=submit], input[type=button], button, a, [role=button], .a-button");
+    if (!clickable) return null;
+    // If they clicked Amazon's wrapper span, act on the real input inside it.
+    const real = clickable.matches(".a-button") ? clickable.querySelector("input, button, a") || clickable : clickable;
+    const label = labelOf(real);
+    return label.length < 80 && BUY_TEXT.test(label) ? real : null;
+  }
 
   // ---------- scraping ----------
 
@@ -85,16 +108,29 @@
     return items.length ? { items, total } : null;
   }
 
-  // Not checked against a live page yet.
-  function scrapeCheckout() {
-    const total = money(
-      firstText([".grand-total-price", "#subtotals-marketplace-table .grand-total-price", "[data-testid='order-summary-total']"])
+  // Find "Order total: CA$12.34" style rows by their text.
+  function totalByLabel() {
+    const labels = [...document.querySelectorAll("td, span, div, dt, li")].filter(
+      (el) => el.children.length <= 2 && /^\s*(order total|total)\s*:?\s*$/i.test(el.textContent)
     );
+    for (const el of labels) {
+      const row = el.closest("tr, li, .a-row, [class*=row], div");
+      const n = money(row?.textContent.replace(el.textContent, ""));
+      if (n) return n;
+    }
+    return null;
+  }
+
+  // Order page markup isn't verified yet, so fall back to text matching.
+  function scrapeCheckout() {
+    const total =
+      money(firstText([".grand-total-price", "#subtotals-marketplace-table .grand-total-price", "[data-testid='order-summary-total']"])) ??
+      totalByLabel();
     const titles = [...document.querySelectorAll(".item-title, .lineitem-title-text")]
       .map((el) => el.textContent.trim())
       .filter(Boolean);
     const items = titles.length ? titles.map((title) => ({ title })) : [{ title: "Your order" }];
-    return total ? { items, total } : null;
+    return { items, total };
   }
 
   function scrapeItem() {
@@ -166,7 +202,21 @@
     host.style.inset = "auto 0 0 auto";
   }
 
+  // Once you've chosen to go ahead, don't summon again on the next checkout step.
+  const CLEARED_KEY = "gicClearedAt";
+  const CLEARED_MS = 20 * 60 * 1000;
+  const isCleared = () => {
+    try {
+      return Date.now() - Number(sessionStorage.getItem(CLEARED_KEY) || 0) < CLEARED_MS;
+    } catch {
+      return false;
+    }
+  };
+
   function proceedWithPurchase() {
+    try {
+      sessionStorage.setItem(CLEARED_KEY, String(Date.now()));
+    } catch {}
     clearUI();
     if (pendingButton) {
       allowNextClick = true;
@@ -402,11 +452,23 @@
   // ---------- triggers ----------
 
   async function maybeSummon(note) {
+    if (isCleared()) {
+      log("Already went through court in the last 20 minutes. Letting it through.");
+      return false;
+    }
     const { settings, recess } = await getStore();
-    if (!settings.onboarded) return false;
+    if (!settings.onboarded) log("Settings never saved. Summoning anyway with an empty profile.");
     const item = scrapeItem();
-    if (!item) return false;
-    if (shouldSkip(settings, item)) return false;
+    if (!item) {
+      log("No item found on this page.", { page: pageType(), path: location.pathname });
+      return false;
+    }
+    const skip = shouldSkip(settings, item);
+    if (skip) {
+      log(`Skipping: ${skip}.`, { total: item.total, skipUnder: settings.skipUnder, neverSites: settings.neverSites });
+      return false;
+    }
+    log("Summoning for", item);
     const until = recess[item.label];
     const recessNote = until && until > Date.now() ? "You called a recess on this one. Ready to talk?" : "";
     showSummon(item, recessNote || note);
@@ -417,8 +479,10 @@
   document.addEventListener(
     "click",
     async (e) => {
-      const btn = e.target.closest?.(BUY_SELECTORS.join(","));
+      if (e.composedPath().includes(host)) return; // clicks inside our own UI
+      const btn = findBuyButton(e.target);
       if (!btn) return;
+      log("Buy button clicked:", labelOf(btn));
       if (allowNextClick) {
         allowNextClick = false;
         return;
@@ -433,7 +497,8 @@
   );
 
   // On cart and checkout pages, summon without waiting for a click.
-  if (pageType() === "cart" || pageType() === "checkout") {
+  log("Loaded on", pageType() || "an untracked page", location.pathname);
+  if (pageType() === "cart") {
     setTimeout(() => maybeSummon(), 1200);
   }
 
