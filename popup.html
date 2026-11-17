@@ -20,6 +20,13 @@
     .empty { color: #6b6785; font-size: 13px; padding: 8px 0; }
     footer { padding: 14px 16px; }
     a { color: #1e1b3a; font-weight: 700; font-size: 13px; }
+    li { cursor: pointer; }
+    li:hover span:first-child { text-decoration: underline; }
+    .tx { display: none; margin: 0 16px; padding: 10px; background: #fff; border: 2px solid #1e1b3a; border-radius: 12px; font-size: 12px; line-height: 1.4; max-height: 220px; overflow-y: auto; }
+    .tx.open { display: block; }
+    .tx p { margin: 0 0 6px; }
+    .tx b { text-transform: uppercase; font-size: 10px; letter-spacing: .06em; }
+    .tx button { font: inherit; font-weight: 700; font-size: 12px; margin-top: 4px; padding: 4px 10px; border-radius: 999px; border: 2px solid #1e1b3a; background: #f5b83d; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -33,6 +40,7 @@
   </div>
   <h3>Recent hearings</h3>
   <ul id="history"><li class="empty">No hearings yet. Go shop!</li></ul>
+  <div class="tx" id="tx"></div>
   <footer><a href="#" id="settings">Settings</a> · <a href="#" id="clear">Clear history</a></footer>
   <script src="popup.js"></script>
 </body>

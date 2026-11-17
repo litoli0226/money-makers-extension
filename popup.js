@@ -37,6 +37,32 @@ chrome.storage.local.get({ history: [], settings: {} }).then(({ history, setting
     tag.className = `tag ${h.outcome === "kept" ? "kept" : ""}`;
     tag.textContent = OUTCOME_LABELS[h.outcome] || h.outcome;
     li.append(name, tag);
+    li.title = "Show transcript";
+    li.onclick = () => showTranscript(h);
     list.appendChild(li);
   }
 });
+
+const NAMES = { judge: "Judge Penny", prosecutor: "Prosecutor Pinch", defendant: "You" };
+
+function showTranscript(h) {
+  const tx = document.getElementById("tx");
+  const lines = h.transcript || [];
+  const plain = [`${h.title} (${h.total != null ? "$" + h.total : "no price"}) -> ${h.verdict} / ${h.outcome}`, ...lines.map((l) => `${NAMES[l.role] || l.role}: ${l.text}`)].join("\n");
+  tx.innerHTML = "";
+  if (!lines.length) tx.append(Object.assign(document.createElement("p"), { textContent: "No transcript saved for this one." }));
+  for (const l of lines) {
+    const p = document.createElement("p");
+    const b = document.createElement("b");
+    b.textContent = `${NAMES[l.role] || l.role}: `;
+    p.append(b, l.text);
+    tx.append(p);
+  }
+  const copy = Object.assign(document.createElement("button"), { textContent: "Copy" });
+  copy.onclick = async () => {
+    await navigator.clipboard.writeText(plain);
+    copy.textContent = "Copied!";
+  };
+  tx.append(copy);
+  tx.classList.add("open");
+}

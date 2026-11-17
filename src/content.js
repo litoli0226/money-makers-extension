@@ -158,9 +158,9 @@
 
   const getStore = () => chrome.storage.local.get({ settings: {}, history: [], recess: {} });
 
-  async function logOutcome(item, verdict, outcome) {
+  async function logOutcome(item, verdict, outcome, transcript = []) {
     const { history } = await getStore();
-    history.unshift({ date: Date.now(), title: item.label, total: item.total, verdict, outcome });
+    history.unshift({ date: Date.now(), title: item.label, total: item.total, verdict, outcome, transcript });
     await chrome.storage.local.set({ history: history.slice(0, 200) });
   }
 
@@ -292,6 +292,16 @@
   }
 
   // ---------- The hearing ----------
+  // A little courtroom scene up top (judge on the bench, prosecutor left, you
+  // right, the item as Exhibit A), with the full chat log underneath.
+
+  const SPEAKERS = {
+    judge: { name: "Judge Penny", svg: () => JUDGE_SVG },
+    prosecutor: { name: "Prosecutor Pinch", svg: () => PROSECUTOR_SVG },
+    defendant: { name: "You", svg: () => DEFENDANT_SVG },
+  };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const readTime = (text) => Math.min(2600, 700 + text.length * 22); // pause so people can read each line
 
   async function startTrial(item) {
     const { settings } = await getStore();
@@ -304,65 +314,104 @@
       <div class="dim">
         <div class="court" role="dialog" aria-label="Hearing">
           <header class="court-head">
-            <div class="judge-id">
-              <div class="avatar">${JUDGE_SVG}</div>
-              <div>
-                <div class="judge-name">Judge Penny</div>
-                <div class="judge-sub">Small Claims &amp; Big Carts</div>
-              </div>
+            <div class="court-title">
+              <span class="court-kicker">Small Claims &amp; Big Carts</span>
+              <span class="court-name">The People v. Your Cart</span>
             </div>
             <div class="pips" aria-label="Round"><span class="pip on"></span><span class="pip"></span></div>
             <button class="x" data-act="close" aria-label="Leave court">&times;</button>
           </header>
-          <div class="exhibit">
-            <span class="exhibit-tag">Exhibit A</span>
-            <span class="exhibit-title">${esc(item.label)}</span>
-            <span class="exhibit-price">${fmt(item.total, item.currency)}</span>
-            ${budgetLine(item, profile)}
+
+          <div class="scene" id="scene">
+            <div class="wall"><div class="seal">${GAVEL_SVG}</div></div>
+            <div class="spot bench" data-who="judge">
+              <div class="char">${JUDGE_SVG}</div>
+              <div class="desk desk-bench"><span>Judge Penny</span></div>
+            </div>
+            <div class="spot left" data-who="prosecutor">
+              <div class="char">${PROSECUTOR_SVG}</div>
+              <div class="desk"><span>Prosecution</span></div>
+            </div>
+            <div class="spot right" data-who="defendant">
+              <div class="char">${DEFENDANT_SVG}</div>
+              <div class="desk"><span>Defense (you)</span></div>
+            </div>
+            <div class="exhibit">
+              <span class="exhibit-tag">Exhibit A</span>
+              <span class="exhibit-title">${esc(item.label)}</span>
+              <span class="exhibit-price">${fmt(item.total, item.currency)}</span>
+              ${budgetLine(item, profile)}
+            </div>
+            <div class="speech" id="speech" hidden></div>
           </div>
-          <div class="transcript" id="transcript"></div>
+
+          <div class="log" id="log" aria-live="polite"></div>
           <div class="dock" id="dock"></div>
         </div>
       </div>`;
     layer.querySelector("[data-act=close]").onclick = () => {
-      logOutcome(item, "none", "left court");
+      logOutcome(item, "none", "left court", transcript);
       clearUI();
     };
-    const transcriptEl = shadow.getElementById("transcript");
+    const scene = shadow.getElementById("scene");
+    const speech = shadow.getElementById("speech");
+    const logEl = shadow.getElementById("log");
     const dock = shadow.getElementById("dock");
     const pips = [...shadow.querySelectorAll(".pip")];
 
-    const say = (role, msg) => {
-      transcript.push({ role, text: msg });
-      const div = document.createElement("div");
-      div.className = `msg ${role}`;
-      div.innerHTML =
-        role === "judge"
-          ? `<div class="avatar sm">${JUDGE_SVG}</div><div class="bubble">${esc(msg)}</div>`
-          : `<div class="bubble">${esc(msg)}</div>`;
-      transcriptEl.appendChild(div);
-      transcriptEl.scrollTop = transcriptEl.scrollHeight;
-    };
+    function spotlight(who, text) {
+      for (const s of scene.querySelectorAll(".spot")) s.classList.toggle("talking", s.dataset.who === who);
+      speech.hidden = false;
+      speech.className = `speech at-${who}`;
+      speech.innerHTML = `<b>${esc(SPEAKERS[who].name)}</b>${esc(text)}`;
+      // restart the pop animation
+      speech.style.animation = "none";
+      void speech.offsetWidth;
+      speech.style.animation = "";
+    }
 
-    const typing = () => {
-      dock.innerHTML = `<div class="typing"><span></span><span></span><span></span> Judge Penny is deliberating</div>`;
+    function addToLog(who, text) {
+      const row = document.createElement("div");
+      row.className = `msg ${who}`;
+      row.innerHTML = `<div class="avatar">${SPEAKERS[who].svg()}</div>
+        <div class="msg-body"><div class="who">${esc(SPEAKERS[who].name)}</div><div class="bubble">${esc(text)}</div></div>`;
+      logEl.appendChild(row);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    async function play(lines) {
+      for (const { speaker, text } of lines) {
+        const who = SPEAKERS[speaker] ? speaker : "judge";
+        transcript.push({ role: who, text });
+        spotlight(who, text);
+        addToLog(who, text);
+        await wait(readTime(text));
+      }
+    }
+
+    const deliberating = (who = "prosecutor") => {
+      for (const s of scene.querySelectorAll(".spot")) s.classList.toggle("thinking", s.dataset.who === who);
+      dock.innerHTML = `<div class="typing"><span></span><span></span><span></span> The court is conferring…</div>`;
     };
+    const stopThinking = () => scene.querySelectorAll(".spot").forEach((s) => s.classList.remove("thinking"));
 
     async function ask(stage) {
-      typing();
-      if (settings.mode !== "live") {
-        await new Promise((r) => setTimeout(r, 900)); // a beat so it feels like the judge is thinking
-        return globalThis.gicScriptedTurn({ stage, item, profile, transcript });
-      }
-      const res = await chrome.runtime.sendMessage({ type: "judge", stage, item, profile, transcript });
-      if (!res?.ok) {
+      deliberating();
+      try {
+        if (settings.mode !== "live") {
+          await wait(800);
+          return globalThis.gicScriptedTurn({ stage, item, profile, transcript });
+        }
+        const res = await chrome.runtime.sendMessage({ type: "judge", stage, item, profile, transcript });
+        if (res?.ok) return res.turn;
         dock.innerHTML = `<div class="error">${esc(res?.error || "Something went wrong.")}</div>
           <div class="row"><button class="btn btn-ghost" data-act="settings">Settings</button><button class="btn btn-ghost" data-act="buy">Just buy it</button></div>`;
         dock.querySelector("[data-act=settings]").onclick = () => chrome.runtime.sendMessage({ type: "openOptions" });
         dock.querySelector("[data-act=buy]").onclick = proceedWithPurchase;
         return null;
+      } finally {
+        stopThinking();
       }
-      return res.turn;
     }
 
     function showDefenseInput() {
@@ -370,7 +419,7 @@
       const last = defenses === MAX_DEFENSES - 1;
       dock.innerHTML = `
         <div class="defense">
-          <textarea id="defense" rows="2" placeholder="Make your case, counselor. Put every reason up front."></textarea>
+          <textarea id="defense" rows="2" placeholder="${last ? "Closing argument. Make it count." : "Your defense. Put every reason up front."}"></textarea>
           <button class="btn send" data-act="submit">${last ? "Rest my case" : "Object!"}</button>
         </div>
         <div class="row quiet">
@@ -382,36 +431,39 @@
       box.focus();
       dock.querySelector("[data-act=submit]").onclick = () => submit(box.value.trim());
       box.onkeydown = (e) => {
+        e.stopPropagation(); // keep Amazon's keyboard shortcuts out of it
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
           submit(box.value.trim());
         }
       };
       dock.querySelector("[data-act=plead]").onclick = () => {
-        logOutcome(item, "none", "pleaded guilty");
+        logOutcome(item, "none", "pleaded guilty", transcript);
         proceedWithPurchase();
       };
       dock.querySelector("[data-act=recess]").onclick = async () => {
         await recess(item);
-        logOutcome(item, "none", "recessed");
+        logOutcome(item, "none", "recessed", transcript);
         clearUI();
       };
     }
 
     async function submit(defense) {
       if (!defense) return;
-      say("defendant", defense);
+      dock.innerHTML = "";
+      await play([{ speaker: "defendant", text: defense }]);
       defenses += 1;
       const stage = defenses >= MAX_DEFENSES ? "verdict" : "rebut";
       const turn = await ask(stage);
       if (!turn) return;
-      say("judge", turn.judge_says);
+      await play(turn.lines);
       if (stage === "verdict") showVerdict(turn);
       else showDefenseInput();
     }
 
     function showVerdict(turn) {
       const label = globalThis.gicVerdictTitles?.[turn.verdict] || "Verdict";
+      scene.classList.add("ruled");
       dock.innerHTML = `
         <div class="verdict v-${esc(turn.verdict)}">
           <div class="stamp">${esc(label)}</div>
@@ -427,23 +479,25 @@
         </div>
         <div class="fine">Judge Penny's ruling is advice, not law. It's always your call.</div>`;
       dock.querySelector("[data-act=follow]")?.addEventListener("click", () => {
-        logOutcome(item, turn.verdict, "kept");
+        logOutcome(item, turn.verdict, "kept", transcript);
         clearUI();
       });
       dock.querySelector("[data-act=buy]").onclick = () => {
-        logOutcome(item, turn.verdict, "bought");
+        logOutcome(item, turn.verdict, "bought", transcript);
         proceedWithPurchase();
       };
     }
 
-    // Opening statement
+    // Opening statements
     const opening = await ask("open");
     if (!opening) return;
-    say("judge", opening.judge_says);
+    await play(opening.lines);
     if (opening.skip_trial) {
-      dock.innerHTML = `<div class="row"><button class="btn" data-act="buy">Carry on</button></div>`;
+      scene.classList.add("ruled");
+      dock.innerHTML = `<div class="verdict v-buy"><div class="stamp">Case dismissed</div></div>
+        <div class="row" style="justify-content:center"><button class="btn" data-act="buy">Carry on</button></div>`;
       dock.querySelector("[data-act=buy]").onclick = () => {
-        logOutcome(item, "buy", "necessity");
+        logOutcome(item, "buy", "necessity", transcript);
         proceedWithPurchase();
       };
       return;
@@ -516,6 +570,10 @@
 
   const JUDGE_SVG = `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#FFE3B3"/><g fill="#fff" stroke="#1E1B3A" stroke-width="2"><circle cx="16" cy="26" r="7"/><circle cx="14" cy="38" r="7"/><circle cx="48" cy="26" r="7"/><circle cx="50" cy="38" r="7"/><path d="M14 22 Q32 2 50 22 Q32 14 14 22Z"/></g><circle cx="32" cy="32" r="13" fill="#F2C9A0" stroke="#1E1B3A" stroke-width="2"/><circle cx="27" cy="31" r="1.8" fill="#1E1B3A"/><circle cx="37" cy="31" r="1.8" fill="#1E1B3A"/><path d="M27 37 Q32 41 37 37" fill="none" stroke="#1E1B3A" stroke-width="2" stroke-linecap="round"/><path d="M22 27 l8 -1 M34 26 l8 1" stroke="#1E1B3A" stroke-width="2" stroke-linecap="round"/><path d="M20 64 Q32 46 44 64Z" fill="#1E1B3A"/></svg>`;
 
+  const PROSECUTOR_SVG = `<svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" fill="#FFD9D3"/><path d="M12 64 Q32 40 52 64Z" fill="#2B2D42"/><path d="M28 50 L32 64 L36 50 L32 46Z" fill="#FF6B5A"/><path d="M26 46 L32 52 L38 46" fill="#fff"/><circle cx="32" cy="30" r="14" fill="#E8B48A" stroke="#1E1B3A" stroke-width="2"/><path d="M17 26 Q20 12 34 13 Q46 14 47 26 Q40 19 30 21 Q22 22 17 26Z" fill="#1E1B3A"/><circle cx="26" cy="30" r="4.5" fill="#fff" stroke="#1E1B3A" stroke-width="2"/><circle cx="38" cy="30" r="4.5" fill="#fff" stroke="#1E1B3A" stroke-width="2"/><path d="M30.5 30 h3" stroke="#1E1B3A" stroke-width="2"/><circle cx="26" cy="30" r="1.6" fill="#1E1B3A"/><circle cx="38" cy="30" r="1.6" fill="#1E1B3A"/><path d="M21 23 l7 2 M43 23 l-7 2" stroke="#1E1B3A" stroke-width="2.2" stroke-linecap="round"/><path d="M27 38 Q32 35 37 38" fill="none" stroke="#1E1B3A" stroke-width="2" stroke-linecap="round"/></svg>`;
+
+  const DEFENDANT_SVG = `<svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" fill="#DDE3FF"/><path d="M12 64 Q32 40 52 64Z" fill="#5B6CFF"/><circle cx="32" cy="30" r="14" fill="#F2C9A0" stroke="#1E1B3A" stroke-width="2"/><path d="M18 28 Q18 13 32 13 Q46 13 46 28 Q42 20 32 21 Q24 21 18 28Z" fill="#6B4A2E"/><circle cx="27" cy="31" r="1.8" fill="#1E1B3A"/><circle cx="37" cy="31" r="1.8" fill="#1E1B3A"/><path d="M27 37 Q32 40 37 36" fill="none" stroke="#1E1B3A" stroke-width="2" stroke-linecap="round"/><path d="M44 22 q4 3 2 7" fill="none" stroke="#8EC5FF" stroke-width="2.4" stroke-linecap="round"/></svg>`;
+
   // ---------- styles ----------
 
   function CSS() {
@@ -568,37 +626,81 @@
       .skip-label { position: relative; }
 
       /* hearing */
-      .court { width: min(600px, 100%); max-height: min(720px, 92vh); display: flex; flex-direction: column; overflow: hidden;
+      .court { width: min(720px, 100%); max-height: 94vh; display: flex; flex-direction: column; overflow: hidden;
         background: #FFFBF3; color: #1E1B3A; border: 3px solid #1E1B3A; border-radius: 24px;
         box-shadow: 0 10px 0 #1E1B3A, 0 30px 80px rgba(0,0,0,.35); animation: pop .4s cubic-bezier(.2, 1.4, .4, 1); }
-      .court-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: #1E1B3A; color: #FFFBF3; }
-      .judge-id { display: flex; align-items: center; gap: 10px; flex: 1; }
-      .avatar { width: 46px; height: 46px; border-radius: 50%; border: 2px solid #F5B83D; overflow: hidden; flex: none; background: #FFE3B3; }
-      .avatar.sm { width: 34px; height: 34px; border-color: #1E1B3A; }
-      .judge-name { font-family: Georgia, serif; font-size: 18px; font-weight: 700; }
-      .judge-sub { font-size: 12px; opacity: .7; }
+      .court-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #1E1B3A; color: #FFFBF3; }
+      .court-title { flex: 1; display: flex; flex-direction: column; }
+      .court-kicker { font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #F5B83D; }
+      .court-name { font-family: Georgia, serif; font-size: 19px; font-weight: 700; }
       .pips { display: flex; gap: 6px; }
       .pip { width: 10px; height: 10px; border-radius: 50%; border: 2px solid #F5B83D; }
       .pip.on { background: #F5B83D; }
       .x { font-size: 26px; line-height: 1; opacity: .7; padding: 0 4px; color: #FFFBF3; }
       .x:hover { opacity: 1; }
 
-      .exhibit { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 12px 16px;
-        background: repeating-linear-gradient(-45deg, #FFF3D6, #FFF3D6 10px, #FFEFC9 10px, #FFEFC9 20px); border-bottom: 2px solid #1E1B3A; }
-      .exhibit-tag { font-size: 11px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; background: #1E1B3A; color: #F5B83D;
-        padding: 3px 8px; border-radius: 6px; }
-      .exhibit-title { font-weight: 700; flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-      .exhibit-price { font-weight: 900; font-size: 18px; }
-      .exhibit-meta { width: 100%; font-size: 12px; color: #6B6785; }
+      /* the scene */
+      .scene { position: relative; height: 250px; flex: none; overflow: hidden; border-bottom: 3px solid #1E1B3A;
+        background: linear-gradient(#F3E3C3 0 58%, #C98F5B 58% 61%, #E8B98A 61% 100%); }
+      .scene::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 39%;
+        background: repeating-linear-gradient(90deg, transparent 0 46px, rgba(120,70,30,.12) 46px 48px); pointer-events: none; }
+      .wall { position: absolute; inset: 0 0 42% 0; background: repeating-linear-gradient(90deg, #F3E3C3 0 70px, #EDD9B3 70px 74px); }
+      .seal { position: absolute; top: 10px; left: 50%; width: 46px; height: 46px; margin-left: -23px; padding: 7px; border-radius: 50%;
+        background: #F5B83D; border: 3px solid #1E1B3A; opacity: .9; }
+      .spot { position: absolute; display: flex; flex-direction: column; align-items: center; z-index: 1; transition: filter .2s; }
+      .char { width: 74px; height: 74px; border-radius: 50%; border: 3px solid #1E1B3A; overflow: hidden; background: #FFE3B3;
+        box-shadow: 0 4px 0 #1E1B3A; transition: transform .2s; }
+      .desk { margin-top: -10px; padding: 14px 14px 8px; min-width: 120px; text-align: center; border: 3px solid #1E1B3A; border-radius: 10px 10px 4px 4px;
+        background: #8B5E3C; color: #FFFBF3; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+      .desk span { display: inline-block; padding: 2px 8px; background: #F5B83D; color: #1E1B3A; border-radius: 4px; }
+      .bench { left: 50%; top: 56px; transform: translateX(-50%); }
+      .bench .char { width: 66px; height: 66px; }
+      .desk-bench { min-width: 190px; background: #6E4528; }
+      .left { left: 4%; bottom: 14px; }
+      .right { right: 4%; bottom: 14px; }
+      .right .char { background: #DDE3FF; }
+      .left .char { background: #FFD9D3; }
+      .spot.talking .char { animation: talk .5s ease-in-out infinite alternate; box-shadow: 0 4px 0 #1E1B3A, 0 0 0 6px rgba(245,184,61,.7); }
+      .spot.thinking .char { animation: think 1.2s ease-in-out infinite; }
+      .scene .spot:not(.talking) { filter: saturate(.75); }
+      .exhibit { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%) rotate(-2deg); z-index: 1;
+        width: min(230px, 34%); padding: 8px 10px; background: #fff; border: 2px solid #1E1B3A; border-radius: 8px; box-shadow: 3px 3px 0 #1E1B3A;
+        display: flex; flex-direction: column; gap: 2px; }
+      .exhibit-tag { align-self: flex-start; font-size: 10px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase;
+        background: #1E1B3A; color: #F5B83D; padding: 2px 6px; border-radius: 4px; }
+      .exhibit-title { font-weight: 700; font-size: 12px; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+      .exhibit-price { font-weight: 900; font-size: 16px; }
+      .exhibit-meta { font-size: 11px; color: #6B6785; }
 
-      .transcript { flex: 1; min-height: 140px; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-      .msg { display: flex; gap: 8px; align-items: flex-end; animation: rise .3s ease-out; }
-      .msg.defendant { justify-content: flex-end; }
-      .bubble { max-width: 80%; padding: 11px 14px; border-radius: 18px; font-size: 15px; line-height: 1.45; border: 2px solid #1E1B3A; }
-      .judge .bubble { background: #fff; border-bottom-left-radius: 6px; box-shadow: 3px 3px 0 #F5B83D; }
-      .defendant .bubble { background: #1E1B3A; color: #FFFBF3; border-bottom-right-radius: 6px; }
+      .speech { position: absolute; z-index: 3; max-width: 300px; padding: 10px 12px; font-size: 14px; line-height: 1.35;
+        background: #fff; border: 3px solid #1E1B3A; border-radius: 14px; box-shadow: 4px 4px 0 #1E1B3A; animation: bubble .25s cubic-bezier(.2,1.6,.4,1); }
+      .speech b { display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #FF6B5A; margin-bottom: 2px; }
+      .speech::after { content: ""; position: absolute; width: 14px; height: 14px; background: #fff; border: 3px solid #1E1B3A;
+        border-top: none; border-left: none; transform: rotate(45deg); }
+      .speech.at-judge { top: 10px; left: calc(50% + 70px); }
+      .speech.at-judge::after { left: -9px; top: 22px; transform: rotate(135deg); }
+      .speech.at-prosecutor { bottom: 110px; left: 3%; }
+      .speech.at-prosecutor::after { left: 30px; bottom: -9px; }
+      .speech.at-defendant { bottom: 110px; right: 3%; background: #1E1B3A; color: #FFFBF3; }
+      .speech.at-defendant b { color: #F5B83D; }
+      .speech.at-defendant::after { right: 30px; bottom: -9px; background: #1E1B3A; }
 
-      .dock { padding: 14px 16px 16px; border-top: 2px dashed #D9D4EA; }
+      /* chat log */
+      .log { flex: 1; min-height: 110px; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; background: #FFFBF3; }
+      .msg { display: flex; gap: 8px; align-items: flex-start; animation: rise .3s ease-out; }
+      .msg.defendant { flex-direction: row-reverse; }
+      .msg .avatar { width: 30px; height: 30px; flex: none; border-radius: 50%; border: 2px solid #1E1B3A; overflow: hidden; background: #FFE3B3; }
+      .msg.prosecutor .avatar { background: #FFD9D3; }
+      .msg.defendant .avatar { background: #DDE3FF; }
+      .msg-body { max-width: 78%; display: flex; flex-direction: column; }
+      .msg.defendant .msg-body { align-items: flex-end; }
+      .who { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #6B6785; margin: 0 4px 2px; }
+      .bubble { padding: 9px 12px; border-radius: 14px; font-size: 14px; line-height: 1.4; border: 2px solid #1E1B3A; background: #fff; }
+      .judge .bubble { box-shadow: 3px 3px 0 #F5B83D; border-top-left-radius: 4px; }
+      .prosecutor .bubble { box-shadow: 3px 3px 0 #FF6B5A; border-top-left-radius: 4px; }
+      .defendant .bubble { background: #1E1B3A; color: #FFFBF3; border-top-right-radius: 4px; }
+
+      .dock { padding: 12px 16px 14px; border-top: 2px dashed #D9D4EA; min-height: 58px; }
       .defense { display: flex; gap: 8px; align-items: flex-end; }
       textarea { flex: 1; font: inherit; font-size: 15px; padding: 11px 14px; border: 2px solid #1E1B3A; border-radius: 16px;
         background: #fff; color: #1E1B3A; resize: none; outline: none; }
@@ -609,19 +711,31 @@
       .typing span:nth-child(2) { animation-delay: .15s; } .typing span:nth-child(3) { animation-delay: .3s; margin-right: 6px; }
       .error { color: #B4462E; }
 
-      .verdict { text-align: center; padding: 6px 0 2px; }
+      .verdict { text-align: center; padding: 4px 0 0; }
       .stamp { display: inline-block; font-family: Georgia, serif; font-weight: 900; font-size: 24px; text-transform: uppercase; letter-spacing: .04em;
-        padding: 8px 18px; border: 4px solid currentColor; border-radius: 10px; transform: rotate(-4deg);
+        padding: 6px 18px; border: 4px solid currentColor; border-radius: 10px; transform: rotate(-4deg);
         animation: stamp .35s cubic-bezier(.2, 1.8, .4, 1); }
       .v-buy .stamp { color: #1F9D6B; } .v-wait .stamp { color: #D98A0B; } .v-skip .stamp { color: #E0533F; }
-      .verdict-tip { margin-top: 12px; font-size: 14px; background: #fff; border: 2px solid #1E1B3A; border-radius: 14px; padding: 10px 12px; }
+      .verdict-tip { margin-top: 10px; font-size: 14px; background: #fff; border: 2px solid #1E1B3A; border-radius: 14px; padding: 10px 12px; }
       .verdict + .row { justify-content: center; }
       .fine { margin-top: 10px; font-size: 12px; color: #8E8AA6; text-align: center; }
+
+      @media (max-width: 560px) {
+        .scene { height: 220px; }
+        .char { width: 54px; height: 54px; } .bench .char { width: 50px; height: 50px; }
+        .desk { min-width: 90px; font-size: 9px; } .desk-bench { min-width: 130px; }
+        .exhibit { display: none; }
+        .speech { max-width: 70%; font-size: 13px; }
+        .speech.at-judge { left: auto; right: 3%; }
+      }
 
       @keyframes fade { from { opacity: 0; } }
       @keyframes pop { from { transform: scale(.85) translateY(20px); opacity: 0; } }
       @keyframes rise { from { transform: translateY(8px); opacity: 0; } }
       @keyframes stamp { from { transform: rotate(-4deg) scale(2.2); opacity: 0; } }
+      @keyframes talk { from { transform: translateY(0) rotate(-2deg); } to { transform: translateY(-5px) rotate(2deg); } }
+      @keyframes think { 0%, 100% { transform: none; } 50% { transform: translateY(-3px); } }
+      @keyframes bubble { from { transform: scale(.6); opacity: 0; } }
       @keyframes blink { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
       @keyframes bang { 0%, 70%, 100% { transform: rotate(0); } 78% { transform: rotate(-22deg); } 86% { transform: rotate(6deg); } }
       @keyframes nudge { 0%, 85%, 100% { transform: none; } 90% { transform: rotate(-1.5deg); } 95% { transform: rotate(1.5deg); } }
