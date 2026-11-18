@@ -239,6 +239,11 @@
     host.style.inset = "0 0 auto auto";
     layer.innerHTML = `<div class="panel-wrap"><div class="panel" role="dialog">${html}</div></div>`;
   }
+  // Centered over a Slate scrim (design system: "Backdrop behind takeover"). Used by the court notice.
+  function showCenteredPanel(html) {
+    host.style.inset = "0";
+    layer.innerHTML = `<div class="scrim"><div class="panel" role="dialog" aria-modal="true">${html}</div></div>`;
+  }
   function showPage(html, cls = "") {
     host.style.inset = "0";
     layer.innerHTML = `<div class="page ${cls}">${html}</div>`;
@@ -398,7 +403,7 @@
     const short = globalThis.gicShortName(item.label);
     const the = item.items.length > 1 ? "this cart" : `the ${short}`;
     const price = money(item.total, item.currency);
-    showPanel(`
+    showCenteredPanel(`
       <div class="panel-head"><span class="notice-head">${ICON.scale}${esc(N.head)}</span><button class="icon-btn" data-act="close" aria-label="Close">${ICON.x}</button></div>
       <div class="card case-card">
         <div class="case-judge">${cast.judge}</div>
@@ -1459,6 +1464,7 @@ label input:focus { border-color: var(--blue); }
 .typing .bubble i:nth-child(2) { animation-delay: .15s; }
 .typing .bubble i:nth-child(3) { animation-delay: .3s; }
 /* ---- court notice (MVP consent) ---- */
+.scrim { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(148, 154, 165, .55); animation: fade .2s ease-out; }
 .notice-head { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }
 .notice-head svg { width: 16px; height: 16px; }
 .case-card { display: flex; align-items: center; gap: 14px; padding: 12px 14px; }
