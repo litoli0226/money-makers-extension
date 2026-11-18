@@ -120,11 +120,24 @@
   const MVP_WITNESSES = {
     ...WITNESSES,
     research: { id: "research", name: "Research witness", role: "Expert witness · quotes published studies" },
+    item: { id: "item", name: "The item itself", role: "Witness · will live in your house" },
+    wallet: { id: "wallet", name: "Your wallet", role: "Witness · has seen money leave before" },
   };
-  function mvpPickWitness(state) {
+  // Unpredictable on purpose: a weighted draw from the witnesses that fit the
+  // case, never the same one twice in a row, with a random stance (for or
+  // against the purchase) so the testimony can't be guessed from the answers.
+  function mvpPickWitness(state, lastId = null, rand = Math.random) {
     const claims = state.answers.map((a) => a.claim);
-    if (claims.some((c) => c === "gift" || c === "want" || c === "treat")) return MVP_WITNESSES.research;
-    return pickWitness(state);
+    const has = (...cs) => claims.some((c) => cs.includes(c));
+    const pool = [["future", 2], ["item", 2], ["wallet", 2]];
+    if (has("gift", "want", "treat", "vague")) pool.push(["research", 3]);
+    if (has("need", "usage", "learn")) pool.push(["usage", 3], ["research", 1]);
+    if (has("price")) pool.push(["price", 3]);
+    const options = pool.filter(([id]) => id !== lastId);
+    const total = options.reduce((t, [, w]) => t + w, 0);
+    let r = rand() * total;
+    const id = (options.find(([, w]) => (r -= w) < 0) || options[0])[0];
+    return { ...MVP_WITNESSES[id], stance: rand() < 0.5 ? "for" : "against" };
   }
 
   globalThis.gicFlow = {

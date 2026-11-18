@@ -24,10 +24,10 @@ the options the team hasn't settled yet.
 
 The MVP spine (R6), after a **court notice**: Matthew's quick check panel restyled as a consent screen ("Before you buy, the court would like a word."), showing the item, its price and the judge who'll hear the case, with "Take it to court", "Skip the court, go to checkout" and "Never summon me for this item".
 
-1. **Name.** "Forgive me, what's your name, defendant?" Pick Mr., Mrs., Ms., Mx. or your own; the surname is always Moneybags. Fixed copy, no AI call (C1 option a).
+1. **Name.** "Forgive me, what's your name, defendant?" Pick Mr., Mrs., Ms. or Mx. from a dropdown; the last name is already written in: Moneybags. No typing. Fixed copy, no AI call (C1 option a).
 2. **Item, price, how.** The judge names the item and price from the page, adds one price line from `src/prices.js` (R11), and asks how it will make your life better.
 3. **Objection, once (R7).** If the answer is a reason rather than a mechanism, the judge raises an eyebrow, says "Not why, defendant. I asked how." and asks once more. Then it moves on.
-4. **Witness, every trial.** Same model, separate request (C5). A research witness quotes `src/findings.js` for gift and want/treat cases; otherwise the price, cost-per-use or future-you witness.
+4. **Witness, every trial, after two answers.** If the judge didn't object, it asks one follow-up first ("How often, exactly?"). The witness is drawn at random from the ones that fit the case (research, cost-per-use, price, Future you, the item itself, your wallet), never the same one two trials in a row, and takes a random side, for or against. The judge asks it a charged question ("Wallet, you've seen $210 leave before. How did it go?") before it testifies. Same model, separate requests (C5): `mvp_charge`, then `mvp_witness`.
 5. **Respond** to the witness (skipped after an objection when C1 option b is on).
 6. **Deliberate.**
 7. **Verdict and sign-up.** Case approved, Sleep on it, or Case denied (R15, wording in `MVP_VERDICTS` in `src/content.js`), plus a sign-up card whose line fits the case. There's no account system: the email stays in the browser (`signups` in storage).

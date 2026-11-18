@@ -785,8 +785,9 @@
     // Time-left bar: an estimate in steps, not a running clock. It only moves
     // forward; an objection adds time to the estimate but never empties the bar.
     // Seconds per step (rough; tune after timing testers, R3).
-    const EST = { name: 10, how: 30, objection: 25, gift: 8, witness: 10, respond: 25, deliberate: 8 };
-    const eta = { done: 0, left: ["name", "how", "witness", "respond", "deliberate"], shown: 0 };
+    const EST = { name: 8, how: 30, objection: 25, followup: 20, gift: 8, witness: 14, respond: 25, deliberate: 8 };
+    // Two "how" answers before the witness, either way: an objection retry or a follow-up.
+    const eta = { done: 0, left: ["name", "how", "followup", "witness", "respond", "deliberate"], shown: 0 };
     function drawEta(label) {
       const leftSec = eta.left.reduce((t, k) => t + EST[k], 0);
       const frac = eta.done / (eta.done + leftSec || 1);
@@ -951,9 +952,34 @@
       });
     }
 
-    // ----- 1. Name (fixed copy, C1 option a: the title tap doesn't count as an input) -----
+    // Title dropdown + the fixed last name. No free text: everyone is a Moneybags.
+    function askTitle() {
+      return new Promise((resolve) => {
+        controls.innerHTML = `<form class="picker name-pick" id="namePick">
+            <label class="select"><span class="sr">Title</span><select id="title" required>
+              <option value="" disabled selected>Title</option>${TITLES.map((t) => `<option>${esc(t)}</option>`).join("")}
+            </select>${ICON.chevron || ""}</label>
+            <span class="surname" aria-label="Last name">Moneybags</span>
+            <button class="btn primary small" disabled>That's me</button>
+          </form>`;
+        const sel = $("#title");
+        const btn = controls.querySelector("button");
+        scroll();
+        sel.focus();
+        sel.addEventListener("keydown", (e) => e.stopPropagation());
+        sel.onchange = () => (btn.disabled = !sel.value);
+        $("#namePick").onsubmit = (e) => {
+          e.preventDefault();
+          if (!sel.value) return sel.focus();
+          controls.innerHTML = "";
+          resolve(sel.value);
+        };
+      });
+    }
+
+    // ----- 1. Name (fixed copy, C1 option a: the title pick doesn't count as an input) -----
     say("judge", L.name, { question: true });
-    state.title = await askButtons(TITLES, { other: true });
+    state.title = await askTitle();
     say("defendant", `${state.title} Moneybags`);
     stepDone("name");
     if (state.left) return;
@@ -972,7 +998,7 @@
       howStep = true;
       const a = await askText(L.howPlaceholder);
       howStep = false;
-      const r = await ask("mvp_how", { answer: a, objection_allowed: objectionAllowed });
+      const r = await ask("mvp_how", { answer: a, objection_allowed: objectionAllowed, second: state.answers.length > 0 });
       state.answers.push({ text: a, kind: r.kind, strength: r.strength, engaged: r.engaged !== false, unsure: !!r.unsure, claim: r.claim });
       log("How answer:", r.kind, r.strength, r.claim, "score", flow.score(state));
       return r;
@@ -991,10 +1017,21 @@
       say("judge", r1.objection, { question: true });
       r1 = await howAnswer(false);
       stepDone("objection");
+      stepDrop("followup"); // the retry was the second answer
       judgeSpot.classList.remove("eyebrow");
       if (state.left) return;
+    } else if (r1.followup) {
+      // No objection: one follow-up first, so the witness doesn't arrive after a single answer.
+      stepDone("how");
+      say("judge", r1.acknowledge);
+      await readPause(r1.acknowledge);
+      say("judge", r1.followup, { question: true });
+      r1 = await howAnswer(false);
+      stepDone("followup");
+      if (state.left) return;
     }
-    stepDone("how"); // no-op if the objection already counted it
+    stepDone("how"); // no-op if already counted
+    stepDrop("followup");
     say("judge", r1.acknowledge);
     await readPause(r1.acknowledge);
 
@@ -1009,15 +1046,24 @@
       stepDone("gift");
     }
 
-    // ----- 4. Witness, every trial -----
+    // ----- 4. Witness, every trial: drawn at random (never the same as last
+    // trial), with a random stance; the judge puts a charged question first -----
+    const { lastWitness = null } = await chrome.storage.local.get({ lastWitness: null });
+    state.witness = flow.mvpPickWitness(state, lastWitness);
+    chrome.storage.local.set({ lastWitness: state.witness.id });
+    log("Witness:", state.witness.id, state.witness.stance);
     say("judge", L.callWitness);
-    moment("The court calls an expert witness.");
-    state.witness = flow.mvpPickWitness(state);
+    await readPause(L.callWitness);
+    const callName = { wallet: "your wallet", item: "the item itself", future: "Future you" }[state.witness.id] || `the ${state.witness.name.toLowerCase()}`;
+    moment(`The court calls ${callName} to the stand.`);
     const stand = scene.querySelector(".spot.witness");
     stand.classList.add("called");
     stand.querySelector(".plate").textContent = state.witness.name;
-    await wait(600);
-    const w = await ask("mvp_witness", { witness: state.witness }, "witness");
+    await wait(700);
+    const c = await ask("mvp_charge", { witness: state.witness });
+    say("judge", c.question, { question: true });
+    await readPause(c.question);
+    const w = await ask("mvp_witness", { witness: state.witness, charge: c.question }, "witness");
     const finding = w.cite ? w : globalThis.gicFindings.FINDINGS.find((f) => f.id === w.finding_id);
     say("witness", w.says, { cite: finding?.cite });
     await readPause(w.says);
@@ -1289,6 +1335,7 @@
   const ICON = {
     scale: svg('<path d="M12 4v16M8 20h8M5 7h14M12 4l-1 3h2z"/><path d="M5 7l-3 6a3 3 0 0 0 6 0L5 7zM19 7l-3 6a3 3 0 0 0 6 0l-3-6z"/>'),
     check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="2.4"'),
+    chevron: svg('<path d="M7 10l5 5 5-5"/>', 'stroke-width="2"'),
     clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
     dollar: svg('<path d="M12 3v18M16.5 7.5c-.8-1.3-2.4-2-4.5-2-2.6 0-4.3 1.3-4.3 3.2 0 4.6 9 2.4 9 7 0 2-1.9 3.3-4.6 3.3-2.3 0-4-.8-4.8-2.3"/>', 'stroke-width="2.2"'),
     x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
@@ -1532,6 +1579,14 @@ label input:focus { border-color: var(--blue); }
 .picker .chip { padding: 8px 14px; font-size: 14px; }
 .picker input { flex: 1; min-width: 140px; border: 1.5px solid var(--paper); border-radius: 12px; padding: 8px 12px; font-size: 14px; outline: none; }
 .picker input:focus { border-color: var(--blue); }
+.name-pick { flex-wrap: nowrap; }
+.name-pick .select { position: relative; display: inline-flex; align-items: center; }
+.name-pick select { appearance: none; -webkit-appearance: none; font: inherit; font-size: 14px; color: var(--ink); background: #fff; border: 1.5px solid var(--paper); border-radius: 12px; padding: 8px 32px 8px 12px; cursor: pointer; outline: none; }
+.name-pick select:focus { border-color: var(--blue); }
+.name-pick .select svg { position: absolute; right: 10px; width: 14px; height: 14px; pointer-events: none; }
+.name-pick .surname { flex: 1; font-size: 15px; font-weight: 600; color: var(--ink); padding: 8px 2px; }
+.name-pick .btn:disabled { opacity: .4; cursor: default; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .live-hint { margin: 0; padding: 8px 14px 0; font-size: 12.5px; font-weight: 600; color: var(--gold-deep); }
 .cite { margin-top: 4px; font-size: 11.5px; color: var(--seal); }
 .signup { display: flex; flex-direction: column; gap: 10px; padding: 14px; }

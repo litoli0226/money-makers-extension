@@ -92,7 +92,8 @@ Set "kind":
 - "unclear": too short or off-topic to tell.
 Score "strength", "engaged", "unsure" and "claim" exactly as in the answer stage rubric: strength is strong, good, neutral, weak or impulse; claim is need, usage, price, learn, gift, treat, want or vague. A mechanism with specifics counts as strong or good.
 If "objection_allowed" is true and kind is not "mechanism": write "objection": tell them you asked how, not why, in one sentence (for example "Not why, defendant. I asked how."), then ask once more, plainly, for when and where they'll use it. Leave "acknowledge" empty.
-Otherwise: write "acknowledge": one short sentence reacting to the answer, without repeating it back. Leave "objection" empty.`,
+Otherwise: write "acknowledge": one short sentence reacting to the answer, without repeating it back. Leave "objection" empty. If "second" is true, this was their second answer: vary the acknowledgment and don't praise.
+Always write "followup": one short question that pins down a number or a moment in their answer (how often, when first, for whom, what happens if they skip it). It's only shown when there was no objection.`,
     schema: {
       kind: ["mechanism", "reason", "unclear"],
       strength: ["strong", "good", "neutral", "weak", "impulse"],
@@ -101,13 +102,20 @@ Otherwise: write "acknowledge": one short sentence reacting to the answer, witho
       claim: ["need", "usage", "price", "learn", "gift", "treat", "want", "vague"],
       acknowledge: "string",
       objection: "string",
+      followup: "string",
     },
+  },
+  mvp_charge: {
+    who: "judge",
+    task: `Stage: mvp_charge. You are calling the witness in "witness" (name and role) to the stand. Ask the witness one charged question, one sentence, addressed to them by name ("Wallet, ..."), that puts this purchase on the line: the price, the plan the defendant gave, or what happens after the box is opened. Don't hint at what the witness will say.`,
+    schema: { question: "string" },
   },
   mvp_witness: {
     who: "witness",
-    task: `Stage: witness. You are the expert witness named in "witness.name". Give your testimony in "says": two or three sentences with one useful perspective on this case. No questions.
-If "witness.id" is "research": quote one finding from "findings" in the case file, in plain words, and set "finding_id" to its id. You may add one sentence from your own knowledge, worded as "research suggests", with no numbers.
-Otherwise set "finding_id" to "none" and follow your role (simple arithmetic from the case file is fine).`,
+    task: `Stage: witness. You are the witness named in "witness.name" ("witness.role" says who you are; "The item itself" speaks as the item, "Your wallet" as the defendant's wallet). The judge just asked you "charge". Answer it in "says": one or two short sentences, dry and specific, no questions.
+Take the side in "witness.stance": "for" means your answer leans toward the purchase, "against" means it leans against it. Never say which side you're on.
+If "witness.id" is "research": quote one finding from "findings" in the case file, in plain words, and set "finding_id" to its id. Pick the finding that fits the stance when you can. No numbers beyond the finding's.
+Otherwise set "finding_id" to "none" (simple arithmetic from the case file is fine).`,
     schema: { says: "string", finding_id: "string" },
   },
   mvp_respond: {

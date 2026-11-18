@@ -6,6 +6,10 @@ so every trial here adds to the cost and wait of every turn.
 The AI copies the voice, pacing and length, never the facts. Oli: these are
 built from your candle and headphones scripts. Edit the lines freely.
 Lines in [brackets] are moments the app writes itself.
+The app picks the witness and its side (for or against) at random, so the
+witness lines here show voice and length, not which witness goes with which case.
+When there's no objection, the judge asks one follow-up ("How often, exactly?")
+before the witness, so the witness always comes after two answers.
 -->
 
 ## Trial 1: the candle, a gift
@@ -21,9 +25,11 @@ You: it smells really nice
 [The judge raises an eyebrow.]
 Judge: Not why, defendant. I asked how. Walk the court through it: when and where will you use it?
 You: I'm giving it to my mom, she lights one every evening while she reads
-Judge: A plan, not just a wish. Noted for the record.
-[The court calls an expert witness.]
-Research witness: People who spent money on others reported more happiness than people who spent it on themselves.
+Judge: The court writes that down.
+Judge: The court will hear from a witness.
+[The court calls the research witness to the stand.]
+Judge: Witness, you've read the studies. Will the candle make the defendant happier, or just busier?
+Research witness: People told to spend a small windfall on someone else were happier by that evening than people told to spend it on themselves.
 Judge: Ah, but that must be different for you, right, defendant?
 You: it's for her birthday so yes
 Judge: Mmm... Mr. Moneybags buys for the other Moneybags. If this is a gift, that changes the verdict.
@@ -31,7 +37,7 @@ Judge: Mmm... Mr. Moneybags buys for the other Moneybags. If this is a gift, tha
 [Verdict: approve] You said "she lights one every evening while she reads" and backed it up. Case approved.
 Judge: Sign up, and I'll help you keep track of your gifts.
 
-## Trial 2: the headphones, a mechanism on the second try
+## Trial 2: the headphones, a mechanism on the second try (the wallet testifies against)
 
 Item: noise-cancelling headphones, $210. Guest, no goal.
 
@@ -44,10 +50,12 @@ You: I need these so I can sleep at night. My roommate keeps me up.
 [The judge raises an eyebrow.]
 Judge: Not why, defendant. I asked how. Walk the court through it: when and where will you use them?
 You: I will use them every night, and set up a shortcut so it plays sleepy music when I go to bed.
-Judge: A plan, not just a wish. Noted for the record.
-[The court calls an expert witness.]
-Cost-per-use analyst: At $210, wearing them every night for a year works out to about 58 cents a night.
-Judge: Defendant, how often will you really use them? The witness is watching.
+Judge: The court writes that down.
+Judge: The court will hear from a witness.
+[The court calls your wallet to the stand.]
+Judge: Wallet, you've seen $210 leave before. How did it go?
+Your wallet: It left quietly. I never heard from it again.
+Judge: Defendant, your wallet has concerns. Your response?
 You: every night, I already lose sleep 4 nights a week
 [Verdict: approve] You said "I will use them every night" and backed it up. Case approved.
 Judge: Sign up, and the court will keep a record of your wins.

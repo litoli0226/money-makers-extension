@@ -250,11 +250,56 @@
       reason: () => "The court has heard why. It will have to do.",
       unclear: () => "The court will take that as it is.",
     },
-    callWitness: "I now call an expert witness to the stand.",
+    callWitness: "The court will hear from a witness.",
+    // Follow-up when there was no objection: pins down a number or a moment, so
+    // the witness comes after two exchanges either way.
+    followup: {
+      usage: () => "How often, exactly? Give the court a number.",
+      need: () => "And if you skip it, what happens next week?",
+      gift: () => "Who is it for, and when will they use it?",
+      learn: () => "How many hours a week will you put into it?",
+      other: (f) => `When is the first time you'll use ${f.it}, and where?`,
+    },
+    secondAck: ["Entered into the record.", "The court writes that down.", "Noted. The court has what it needs from you, for now."],
+    // The witness: the judge asks a charged question, the witness answers.
+    // Each witness has lines for and against the purchase; the trial picks a
+    // stance at random so the witness can't be predicted.
+    witness: {
+      research: {
+        charge: (f) => `Witness, you've read the studies. Will ${f.it} make the defendant happier, or just busier?`,
+      },
+      usage: {
+        charge: () => "Witness, the defendant says they'll use it. Run the numbers.",
+        for: [(f) => `At ${f.price}, used three times a week for a year, that's about ${f.perUse} a use. Cheaper than a coffee.`, () => "Used as described, this pays for itself in use. The court has seen worse math."],
+        against: [(f) => `${f.price} is cheap per use only if it gets used. I've seen plenty of things that didn't.`, () => "The numbers work on paper. The court should ask whether the plan survives a busy week."],
+      },
+      price: {
+        charge: (f) => `Witness, is ${f.price} a deal, or does it only feel like one?`,
+        for: [() => "In my line of work, this price is ordinary. No trick here.", () => "It's a fair price. Waiting won't make it a better one."],
+        against: [() => "It feels like a deal because the page says so. I'd check again in two weeks.", () => "Every price is a deal on the day you want something."],
+      },
+      future: {
+        charge: (f) => `Future ${f.defendant}, you've lived with this choice. Was it worth it?`,
+        for: [() => "Honestly? I use it more than I thought I would. Don't tell my wallet.", () => "I'd buy it again. Slower this time, but I'd buy it."],
+        against: [(f) => `Honestly? I don't remember wanting it this much. I do remember the ${f.price}.`, () => "It's fine. It's on a shelf. The shelf looks nice."],
+      },
+      item: {
+        charge: (f) => `${f.The}, you'll be the one living in the house. What happens to you after the box is opened?`,
+        for: [() => "I get used. Daily. Some of us are lucky.", () => "I'd be put to work by the end of the day. I've seen the plan."],
+        against: [() => "First week, I'm the favorite. By week three, I'm in a drawer with the other favorites.", () => "I'll be used twice, photographed once and moved during spring cleaning."],
+      },
+      wallet: {
+        charge: (f) => `Wallet, you've seen ${f.price} leave before. How did it go?`,
+        for: [() => "Fine, actually. When it's planned, I don't mind.", () => "This one has a reason attached. Those leave on good terms."],
+        against: [() => "It left quietly. I never heard from it again.", () => "I've been lighter. I don't recommend it."],
+      },
+    },
     respondQ: {
       research: () => "Ah, but that must be different for you, right, defendant?",
+      item: (f) => `Defendant, ${f.the} has spoken. Your response?`,
+      wallet: () => "Defendant, your wallet has testified. Your response?",
       price: () => "Defendant, could you wait two weeks and see if the price holds?",
-      usage: () => "Defendant, how often will you really use it? The witness is watching.",
+      usage: () => "Defendant, the witness ran your numbers. Do they hold up in a busy week?",
       future: () => "Defendant, anything you'd like to say to your future self?",
     },
     respondAck: () => "So noted. The court will now deliberate.",
@@ -277,17 +322,21 @@
   // scripted mode; the AI judge classifies it itself in live mode. Also used for
   // the optional live hint under the text box.
   const MECH = /\b(i'll|i will|i would|i'd|i plan to|i'm going to|every (day|night|morning|evening|week|weekend)|each (day|night|week)|daily|nightly|weekly|whenever|when i|before (bed|work|class|school)|after (work|class|school)|while i|times a (day|week|month)|on my (commute|way)|set (it |them )?up|plug|wear (it|them)|use (it|them) (to|for|on|at|in|every|when|while))\b/i;
+  // Numbers and frequencies: the answers a follow-up asks for ("twice a day,
+  // 40 minutes each way") count as how, even without "I will".
+  const SPEC = /\b(\d+|once|twice|(one|two|three|four|five|six|seven) times|(a|per|each) (day|night|week|month|weekend)|minutes|hours)\b/i;
   function howKind(text) {
     const t = String(text || "").trim();
     const words = t.split(/\s+/).filter(Boolean).length;
     if (words < 4) return "unclear";
-    return MECH.test(t) && words >= 6 ? "mechanism" : "reason";
+    return (MECH.test(t) && words >= 6) || SPEC.test(t) ? "mechanism" : "reason";
   }
 
   function mvpFacts(ctx) {
     const f = facts(ctx);
     const t = ctx.title ? `${ctx.title} Moneybags` : "Moneybags";
-    return { ...f, defendant: t, the: f.the === "the " ? "this item" : f.the, it: f.it === "the " ? "this item" : f.it };
+    const the = f.the === "the " ? "this item" : f.the;
+    return { ...f, defendant: t, the, The: the.charAt(0).toUpperCase() + the.slice(1), it: f.it === "the " ? "this item" : f.it };
   }
 
   function scoreHow(text, kind) {
@@ -325,15 +374,24 @@
         if (ctx.objection_allowed && kind !== "mechanism") {
           return { kind, ...e, acknowledge: "", objection: `${MVP_LINES.objection} ${MVP_LINES.objectionAgain}` };
         }
-        return { kind, ...e, acknowledge: MVP_LINES.acknowledge[kind](f) };
+        const fu = MVP_LINES.followup[e.claim] || MVP_LINES.followup.other;
+        const ack = ctx.second ? MVP_LINES.secondAck[(ctx.answers || []).length % MVP_LINES.secondAck.length] : MVP_LINES.acknowledge[kind](f);
+        return { kind, ...e, acknowledge: ack, followup: fu(f) };
       }
+      case "mvp_charge":
+        return { question: MVP_LINES.witness[ctx.witness.id].charge(f) };
       case "witness":
       case "mvp_witness": {
         if (ctx.witness.id === "research") {
           const claims = (ctx.answers || []).map((a) => a.claim);
           // The latest argument decides the finding ("it's a gift" after "it smells nice" -> the gifts study).
           const fd = globalThis.gicFindings.findingFor([...claims].reverse().find((c) => c !== "vague") || "vague");
-          return { says: `Research witness, under oath. ${fd.line}`, cite: fd.cite, url: fd.url };
+          return { says: fd.line, cite: fd.cite, url: fd.url };
+        }
+        const W = MVP_LINES.witness[ctx.witness.id];
+        if (ctx.format === "mvp" && W && W[ctx.witness.stance]) {
+          const lines = W[ctx.witness.stance];
+          return { says: lines[Math.floor(Math.random() * lines.length)](f) };
         }
         return { says: LINES.witness[ctx.witness.id](f) };
       }
