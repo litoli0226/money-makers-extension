@@ -223,10 +223,21 @@
     notice: {
       head: "Court notice",
       title: "Before you buy, the court would like a word.",
-      body: (f) => `The judge will ask you two or three questions about ${f.the}. About a minute. The verdict is advice. You always decide.`,
+      body: (f) => `The judge will ask you two or three questions about ${f.the}. About two minutes. The verdict is advice. You always decide.`,
       start: "Take it to court",
       skip: "Skip the court, go to checkout",
       never: "Never summon me for this item",
+      // Disclosure. Keep it true to the code: see "What the court keeps" in README.
+      keepsLabel: "What the court keeps",
+      keeps: (ai) =>
+        [
+          "No account or sign-up needed.",
+          "This browser keeps the item, its price, what you type, the verdict and how long the trial took, so you can look back at your cases. Nothing goes to Amazon or to our team.",
+          ai
+            ? `To write the judge's lines, your answers, the item and its price are sent to ${ai}. Nothing else is sent.`
+            : "The judge's lines are written by the extension itself. Nothing you type leaves this browser.",
+          "Erase it anytime: Settings, then Clear history. Removing the extension erases it too.",
+        ],
     },
     name: "Forgive me, what's your name, defendant?",
     item: (f) => `${f.defendant}, the court has your case: ${f.the}, for ${f.price}.`,

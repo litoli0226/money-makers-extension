@@ -397,6 +397,16 @@
   // Matthew's quick check panel, restyled: same spot, same three ways out, in the
   // courtroom voice. Copy lives in MVP_LINES.notice in src/script.js.
 
+  // Who sees the defendant's words in AI mode (for the disclosure). Null in scripted mode.
+  function aiProvider(settings) {
+    if (settings.mode === "anthropic") return "Anthropic (Claude), through the team's API key";
+    if (settings.mode === "openrouter") {
+      const model = settings.openrouterModel || "anthropic/claude-haiku-5.5";
+      return `OpenRouter, which passes them to the model ${model}`;
+    }
+    return null;
+  }
+
   function showCourtNotice(item, settings, history) {
     const N = globalThis.gicMvpLines.notice;
     const cast = globalThis.gicCast.castCourt();
@@ -419,6 +429,9 @@
         <button class="btn primary" data-act="court">${esc(N.start)}</button>
         <button class="btn outline" data-act="skip">${esc(N.skip)}</button>
       </div>
+      <details class="keeps"><summary>${esc(N.keepsLabel)}</summary><ul>${N.keeps(aiProvider(settings))
+        .map((t) => `<li>${esc(t)}</li>`)
+        .join("")}</ul></details>
       <button class="link" data-act="never">${esc(N.never)}</button>`);
     $("[data-act=court]").focus();
     const skip = async (outcome) => {
@@ -740,7 +753,7 @@
     let howStep = false; // the live hint only runs on "how" questions
 
     showPage(`
-      <div class="topbar"><span id="round"></span><button class="chip-btn" data-act="leave">Leave trial ${ICON.x}</button></div>
+      <div class="topbar"><div class="eta" role="progressbar" aria-label="Time left in your trial"><div class="eta-bar"><i id="etaFill"></i></div><span id="etaText"></span></div><button class="chip-btn" data-act="leave">Leave trial ${ICON.x}</button></div>
       <div class="court-stage">
         <div class="scene" id="scene" aria-hidden="true">
           <div class="seal-wall">${ICON.scale}</div>
@@ -767,12 +780,37 @@
 
     const logEl = $("#log");
     const controls = $("#controls");
-    const roundEl = $("#round");
     const scene = $("#scene");
     const judgeSpot = scene.querySelector(".spot.judge");
-    let asked = 0;
-    const setRound = (label) => (roundEl.textContent = label || `Question ${asked}`);
-    setRound("Your name");
+    // Time-left bar: an estimate in steps, not a running clock. It only moves
+    // forward; an objection adds time to the estimate but never empties the bar.
+    // Seconds per step (rough; tune after timing testers, R3).
+    const EST = { name: 10, how: 30, objection: 25, gift: 8, witness: 10, respond: 25, deliberate: 8 };
+    const eta = { done: 0, left: ["name", "how", "witness", "respond", "deliberate"], shown: 0 };
+    function drawEta(label) {
+      const leftSec = eta.left.reduce((t, k) => t + EST[k], 0);
+      const frac = eta.done / (eta.done + leftSec || 1);
+      eta.shown = Math.max(eta.shown, frac);
+      $("#etaFill").style.width = `${Math.round(eta.shown * 100)}%`;
+      $("#etaText").textContent =
+        label || (leftSec > 60 ? "About 2 minutes left" : leftSec > 25 ? "About 1 minute left" : leftSec > 10 ? "Under a minute left" : "Almost done");
+    }
+    const stepDone = (k) => {
+      const i = eta.left.indexOf(k);
+      if (i < 0) return;
+      eta.left.splice(i, 1);
+      eta.done += EST[k];
+      drawEta();
+    };
+    const stepAdd = (k) => {
+      eta.left.splice(eta.left.length - 2, 0, k);
+      drawEta();
+    };
+    const stepDrop = (k) => {
+      eta.left = eta.left.filter((x) => x !== k);
+      drawEta();
+    };
+    drawEta();
 
     on("[data-act=leave]", () => {
       state.left = true;
@@ -917,6 +955,7 @@
     say("judge", L.name, { question: true });
     state.title = await askButtons(TITLES, { other: true });
     say("defendant", `${state.title} Moneybags`);
+    stepDone("name");
     if (state.left) return;
 
     // ----- 2. Item, price line, "how" -----
@@ -927,8 +966,6 @@
       say("judge", r0.price_line);
       await readPause(r0.price_line);
     }
-    asked = 1;
-    setRound();
     say("judge", r0.question, { question: true });
 
     const howAnswer = async (objectionAllowed) => {
@@ -946,26 +983,30 @@
     if (state.left) return;
     if (flow.mvpAfterHow(state, r1.kind) === "object" && r1.objection) {
       state.objected += 1;
+      stepDone("how");
+      stepAdd("objection");
       judgeSpot.classList.add("eyebrow"); // set_expression: eyebrow_raised
       moment("The judge raises an eyebrow.");
       await wait(500);
       say("judge", r1.objection, { question: true });
-      asked = 2;
-      setRound();
       r1 = await howAnswer(false);
+      stepDone("objection");
       judgeSpot.classList.remove("eyebrow");
       if (state.left) return;
     }
+    stepDone("how"); // no-op if the objection already counted it
     say("judge", r1.acknowledge);
     await readPause(r1.acknowledge);
 
     // ----- optional: gift buttons (C4 switch) -----
     if (settings.giftButtons === "on" && state.answers.some((a) => a.claim === "gift")) {
+      stepAdd("gift");
       const g = await ask("gift_check");
       say("judge", g.question, { question: true });
       const pick = await askButtons(["It's a gift", "It's not a gift"]);
       say("defendant", pick);
       state.gift = pick === "It's a gift";
+      stepDone("gift");
     }
 
     // ----- 4. Witness, every trial -----
@@ -980,12 +1021,12 @@
     const finding = w.cite ? w : globalThis.gicFindings.FINDINGS.find((f) => f.id === w.finding_id);
     say("witness", w.says, { cite: finding?.cite });
     await readPause(w.says);
+    stepDone("witness");
     if (state.left) return;
 
     // ----- 5. Respond to the witness (skipped after an objection if C1 (b) is on) -----
+    if (!flow.mvpAskRespond(state, settings)) stepDrop("respond");
     if (flow.mvpAskRespond(state, settings)) {
-      asked += 1;
-      setRound();
       const q = await ask("mvp_respond_q", { witness: state.witness });
       say("judge", q.question, { question: true });
       const a = await askText("Your response");
@@ -993,11 +1034,12 @@
       state.answers.push({ text: a, strength: r.strength, engaged: r.engaged !== false, unsure: !!r.unsure, claim: r.claim });
       say("judge", r.acknowledge);
       await readPause(r.acknowledge);
+      stepDone("respond");
     }
     if (state.left) return;
 
     // ----- 6. Deliberate, 7. verdict + sign-up -----
-    setRound("Deliberating");
+    drawEta("Deliberating");
     return mvpDeliberate(item, settings, history, state, transcript, ctx);
   }
 
@@ -1051,9 +1093,10 @@
         <div class="card signup" id="signup">
           <p class="signup-line"><span class="av judge">${ICON.scale}</span><span>${esc(signupLine)}</span></p>
           <form id="signupForm" class="signup-row">
-            <input id="email" type="email" placeholder="you@school.edu" autocomplete="email" />
+            <input id="email" type="email" placeholder="you@email.com" autocomplete="email" />
             <button class="btn outline small">Sign up</button>
           </form>
+          <p class="tiny">Optional. The court works the same without it. Your email stays in this browser for now.</p>
         </div>
         <button class="btn primary" data-act="primary">${esc(V.primary)}</button>
         <button class="link" data-act="secondary">${esc(V.secondary)}</button>
@@ -1463,6 +1506,17 @@ label input:focus { border-color: var(--blue); }
 .typing .bubble i { width: 6px; height: 6px; border-radius: 50%; background: var(--slate); animation: blink 1s infinite; }
 .typing .bubble i:nth-child(2) { animation-delay: .15s; }
 .typing .bubble i:nth-child(3) { animation-delay: .3s; }
+/* ---- disclosure on the court notice ---- */
+.keeps { font-size: 12.5px; color: var(--seal); }
+.keeps summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.keeps ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
+
+/* ---- time-left bar (MVP) ---- */
+.eta { display: flex; flex-direction: column; gap: 4px; min-width: 200px; }
+.eta-bar { width: 220px; height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.eta-bar i { display: block; height: 100%; width: 0; background: var(--ink); border-radius: 99px; transition: width .6s ease-out; }
+.eta span { font-size: 12px; font-weight: 600; color: var(--seal); }
+
 /* ---- court notice (MVP consent) ---- */
 .scrim { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(148, 154, 165, .55); animation: fade .2s ease-out; }
 .notice-head { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }

@@ -49,6 +49,10 @@ Try it offline: `npm run preview`, then open `http://localhost:8765/test/cart/pr
 
 **Who's in court changes per trial.** `src/cast.js` holds 8 judge and 8 witness presets: fixed combinations of 6 skin tones, hair style, hair color and glasses. Each trial picks one of each at random (logged as `Cast:` in the console and saved with the trial). See them all at `http://localhost:8765/test/cast.html`. Add or edit presets there; keep colors from its `SKIN` and `HAIR_COLOR` lists.
 
+**What the court keeps** (shown to testers on the court notice): everything stays in `chrome.storage.local` in the tester's browser: item, price, transcript, verdict, trial seconds, cast, and the optional sign-up email (`signups`). Nothing goes to Amazon or to the team. In AI mode, the case file (item, price, transcript) goes to OpenRouter or Anthropic. "Clear history" in Settings erases it all, and so does removing the extension.
+
+**Time-left bar.** The MVP top bar shows an estimate, not a clock: "About 2 minutes left" with an empty bar that fills by step. Seconds per step are in `EST` in `startMvpTrial` (`src/content.js`); an objection adds time to the estimate but the bar never moves backward.
+
 Not done on purpose (MVP rules): the restate step, the risk question and the eyewitness are cut (R8); live prices and Amazon logins are out (R4). The witness still uses a separate request, because "not a second LLM" (C5) is already true: it's the same model.
 
 ## How it flows

@@ -63,6 +63,6 @@ document.getElementById("removeGoal").onclick = () => {
 };
 
 document.getElementById("reset").onclick = async () => {
-  await chrome.storage.local.set({ history: [], recess: {}, wishlist: [], neverItems: [] });
+  await chrome.storage.local.set({ history: [], recess: {}, wishlist: [], neverItems: [], signups: [] });
   flash("History cleared");
 };
