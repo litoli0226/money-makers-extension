@@ -31,12 +31,14 @@ Score the answer in "strength":
 - "weak": mostly a want, or vague.
 - "impulse": clearly an impulse, a mood buy or boredom.
 Set "engaged" to false if the answer is under three words, "idk", off-topic, or a joke with no reason in it. Otherwise true.
+Set "unsure" to true if the answer shows confusion or debate ("maybe", "still thinking", "I guess", "trying", "not sure"). Otherwise false.
 Set "claim" to the main kind of argument: need, usage, price, learn, gift, treat, want or vague.
 Write "question": the question for round "next_round". Push on the weakest part of their case so far. Never repeat an earlier question. If "next_round" equals "rounds_planned", start it with "Last question."`,
     schema: {
       acknowledge: "string",
       strength: ["strong", "good", "neutral", "weak", "impulse"],
       engaged: "boolean",
+      unsure: "boolean",
       claim: ["need", "usage", "price", "learn", "gift", "treat", "want", "vague"],
       question: "string",
     },
@@ -53,10 +55,9 @@ Write "question": the question for round "next_round". Push on the weakest part 
   },
   verdict: {
     who: "judge",
-    task: `Stage: verdict. The ruling is already decided by the hearing rules and is in "verdict": "approve", "save" or "recess". Never contradict it. Write "reason": one or two sentences explaining the ruling, referring to what the defendant said.
+    task: `Stage: verdict. The ruling is already decided by the hearing rules and is in "verdict": "approve" (go for it) or "save" (save it). Never contradict it. Write "reason": one line explaining the ruling, drawn from what the defendant said.
 - approve: their case held up. Quote a few of their best words.
-- save: the case didn't outweigh the cost. If they have a goal, say what the money does for it.
-- recess: their case is reasonable but not convincing yet. Suggest sleeping on it and coming back tomorrow.`,
+- save: the case didn't outweigh the cost. If they have a goal, say what the money does for it.`,
     schema: { reason: "string" },
   },
 };
@@ -70,13 +71,29 @@ function jsonSchema(shape) {
   return { type: "object", properties, required: Object.keys(shape), additionalProperties: false };
 }
 
-const personalities = {};
-async function personality(who) {
-  if (!personalities[who]) {
-    const res = await fetch(chrome.runtime.getURL(`personality/${who}.md`));
-    personalities[who] = await res.text();
+// personality/<who>.md is the character brief. personality/example-trials.md
+// holds sample hearings the team wrote, used as a style reference.
+const files = {};
+async function readFile(path) {
+  if (!(path in files)) {
+    const res = await fetch(chrome.runtime.getURL(path));
+    files[path] = res.ok ? await res.text() : "";
   }
-  return personalities[who];
+  return files[path];
+}
+async function personality(who) {
+  const brief = await readFile(`personality/${who}.md`);
+  const examples = await readFile("personality/example-trials.md");
+  if (!examples.trim()) return brief;
+  return `${brief}
+
+---
+
+# Example trials (style reference)
+
+These are sample hearings the team wrote to show the tone, pacing and length to aim for. Match their voice, not their facts: never reuse their items, prices or quotes, and follow the stage instructions below even when an example does something different.
+
+${examples}`;
 }
 
 async function callOpenRouter(settings, system, schema, caseFile) {

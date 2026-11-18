@@ -37,6 +37,7 @@ chrome.storage.local.get({ history: [], settings: {} }).then(({ history, setting
       : h.outcome === "approved" ? [ICONS.check, "green", "Case approved", "green"]
       : h.outcome === "recessed" ? [ICONS.dot, "plain", "Recess", ""]
       : h.outcome === "never" ? [ICONS.dot, "plain", "Won't ask again", ""]
+      : h.outcome === "not now" ? [ICONS.dot, "plain", "Not now", ""]
       : h.outcome === "left" ? [ICONS.dot, "plain", "Left trial", ""]
       : [ICONS.dot, "plain", "Bought", ""];
     const li = document.createElement("li");

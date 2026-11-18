@@ -8,7 +8,6 @@
   window.__mmLoaded = true;
 
   const flow = globalThis.gicFlow;
-  const DAY_MS = 24 * 60 * 60 * 1000;
   const LIVE_TIMEOUT_MS = 25000;
 
   // Buttons that mean "I'm buying now". Amazon changes these, so keep a list.
@@ -168,7 +167,7 @@
 
   // ---------- storage ----------
 
-  const getStore = () => chrome.storage.local.get({ settings: {}, history: [], recess: {}, neverItems: [], wishlist: [] });
+  const getStore = () => chrome.storage.local.get({ settings: {}, history: [], neverItems: [], wishlist: [] });
 
   const savedTotal = (settings, history) =>
     (Number(settings.savedSoFar) || 0) +
@@ -368,7 +367,11 @@
       </div>
       <button class="link" data-act="never">Never ask about this item</button>`);
     $("[data-act=save]").focus();
-    on("[data-act=close]", clearUI);
+    // Flow step 3, "Not now": the X lets the order go through, no guilt message.
+    on("[data-act=close]", async () => {
+      await logOutcome(item, "not now");
+      proceedWithPurchase();
+    });
     on("[data-act=setgoal]", () => chrome.runtime.sendMessage({ type: "openOptions" }));
     on("[data-act=save]", () => saveIt(item, settings, history, "checkout", "panel"));
     on("[data-act=court]", () => startTrial(item, settings, history));
@@ -504,9 +507,13 @@
     const setRound = () => (roundEl.textContent = `Round ${state.round} of ${state.totalRounds}`);
     setRound();
 
+    // Flow: "Leave trial" (any round) -> back to cart, no verdict.
     on("[data-act=leave]", () => {
+      state.left = true;
       logOutcome(item, "left", { where: "courtroom", transcript });
+      pendingButton = null;
       clearUI();
+      if (pageType() === "checkout") location.href = `${location.origin}/cart`;
     });
 
     const scroll = () => (logEl.scrollTop = logEl.scrollHeight);
@@ -588,7 +595,8 @@
       say("defendant", answer);
 
       const r = await ask("answer", { answer, next_round: state.round + 1 });
-      state.answers.push({ text: answer, strength: r.strength, engaged: r.engaged !== false, claim: r.claim });
+      if (state.left) return;
+      state.answers.push({ text: answer, strength: r.strength, engaged: r.engaged !== false, unsure: !!r.unsure, claim: r.claim });
       log("Answer scored", r.strength, r.claim, r.engaged ? "" : "(low effort)", "score", flow.score(state));
       say("judge", r.acknowledge);
       await readPause(r.acknowledge);
@@ -597,6 +605,7 @@
       if (step.action === "rule") {
         moment(step.moment);
         await wait(1200);
+        if (state.left) return;
         return deliberate(item, settings, history, profile, state, transcript, ctx);
       }
       if (step.action === "witness") {
@@ -613,7 +622,7 @@
         say("judge", q.question, { question: true });
         return openInput();
       }
-      if (step.action === "extend") {
+      if (step.action === "recess") {
         moment(step.moment);
         state.totalRounds += 1;
       }
@@ -654,14 +663,13 @@
     showVerdict(item, settings, history, profile, verdict, reason, transcript);
   }
 
-  // ---------- 09 / 10 Verdict, plus recess ----------
+  // ---------- 09 / 10 Verdict: "Save it" or "Go for it" ----------
 
   function showVerdict(item, settings, history, profile, verdict, reason, transcript) {
     const price = money(item.total, item.currency);
     const V = {
       save: { seal: `<div class="seal blue ring">${ICON.scale}</div>`, title: "Save it for later", box: "blue", primary: `Save ${price}`, secondary: "Appeal and buy anyway" },
       approve: { seal: `<div class="seal green ring">${ICON.check}</div>`, title: "Case approved", box: "green", primary: "Continue to checkout", secondary: "Actually, save it instead" },
-      recess: { seal: `<div class="seal plain ring">${ICON.clock}</div>`, title: "Sleep on it", box: "plain", primary: "Recess until tomorrow", secondary: "Appeal and buy anyway" },
     }[verdict];
     showPage(`
       <div class="card-lg">
@@ -676,18 +684,12 @@
     $("[data-act=primary]").focus();
     const record = { where: "courtroom", verdict, transcript };
 
+    // Flow step 6 -> 7: saving goes to the saved screen, buying always passes
+    // through "Totally okay, you thought it through" before the order continues.
     on("[data-act=primary]", async () => {
       if (verdict === "save") return saveIt(item, settings, history, "courtroom", "page", transcript);
-      if (verdict === "approve") {
-        await logOutcome(item, "approved", record);
-        return proceedWithPurchase();
-      }
-      const { recess } = await getStore();
-      recess[item.label] = Date.now() + DAY_MS;
-      await chrome.storage.local.set({ recess });
-      await logOutcome(item, "recessed", record);
-      pendingButton = null;
-      clearUI();
+      await logOutcome(item, "approved", record);
+      showTotallyOkay(profile);
     });
     on("[data-act=secondary]", async () => {
       if (verdict === "approve") return saveIt(item, settings, history, "courtroom", "page", transcript);
@@ -717,7 +719,7 @@
       log("Already went through a check-in in this tab in the last 20 minutes. Letting it through.");
       return false;
     }
-    const { settings, history, recess, neverItems } = await getStore();
+    const { settings, history, neverItems } = await getStore();
     const item = scrapeItem();
     if (!item) {
       log("No item found on this page.", { page: pageType(), path: location.pathname });
@@ -729,8 +731,7 @@
       return false;
     }
     log("Checking in on", item);
-    const until = recess[item.label];
-    showQuickCheck(item, settings, history, until && until > Date.now() ? "You called a recess on this one. Still want it?" : "");
+    showQuickCheck(item, settings, history);
     return true;
   }
 
@@ -756,9 +757,8 @@
     true
   );
 
-  // On the cart page, check in without waiting for a click.
+  // Flow step 2: the nudge appears when you click a checkout button, not before.
   log("Loaded on", pageType() || "an untracked page", location.pathname);
-  if (pageType() === "cart") setTimeout(maybeCheckIn, 1200);
 
   // ---------- icons ----------
 

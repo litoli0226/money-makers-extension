@@ -2,7 +2,7 @@
 // background.js, built from canned lines plus what we scraped from the page.
 //
 //   open          -> { opening, question }
-//   answer        -> { acknowledge, strength, engaged, claim, question }
+//   answer        -> { acknowledge, strength, engaged, unsure, claim, question }
 //   witness       -> { says }
 //   after_witness -> { question }
 //   verdict       -> { reason }
@@ -24,15 +24,17 @@
           ? "A broken one is a fair reason. Noted."
           : /ran out|run out|running out/.test(f.lastLower)
             ? "Running out is a fair reason. Noted."
-            : "A genuine need. The court takes note.",
-      usage: () => "Regular use counts for a lot in this court.",
+            : ["A genuine need. The court takes note.", "The court finds that persuasive.", "Another point for the defense. Noted."][f.repeat % 3],
+      usage: (f) => ["Regular use counts for a lot in this court.", "Frequent use, entered into the record.", "The court likes a well-used purchase."][f.repeat % 3],
       price: () => "A discount is a fair point. The court has also seen many \"deals\" come back next week.",
       learn: () => "Self-improvement. The court admires your ambition, if not yet your cart.",
       gift: () => "Generosity is admissible. The court will allow it, for now.",
       treat: () => "The court has had weeks like that too. Noted, sympathetically.",
       want: () => "Honest. The court appreciates honesty and will hold it against you only slightly.",
-      vague: () => "The court will need a little more than that.",
-      lowEffort: () => "Brevity is the soul of wit, counselor, but not of a defense.",
+      vague: (f) =>
+        ["The court will need a little more than that.", "Noted, though the court is still waiting for the reason.", "The court admires the mystery. It would admire a reason more."][f.repeat % 3],
+      lowEffort: (f) =>
+        ["Brevity is the soul of wit, counselor, but not of a defense.", "Short and sweet. The court was hoping for less sweet, more reason.", "The court notes your economy of words."][f.repeat % 3],
     },
 
     witness: {
@@ -58,8 +60,6 @@
         }`,
       approve: (f) =>
         `${f.bestQuote ? `You said "${f.bestQuote}" and backed it up.` : "You made your case and backed it up."} That's a solid case.${f.goal ? ` ${f.goal} stays on track.` : ""}`,
-      recess: (f) =>
-        `Your case is reasonable, but not convincing yet. Sleep on it. If you still want ${f.it} tomorrow, the court will hear you again.`,
     },
   };
 
@@ -85,7 +85,7 @@
   // ---------- scoring ----------
 
   const KEYWORDS = {
-    need: ["need", "broke", "broken", "stopped working", "ran out", "run out", "running out", "replace", "doctor", "prescribed", "health", "for work", "for school", "for class", "required", "lost my", "lost it"],
+    need: ["need", "broke", "broken", "stopped working", "ran out", "run out", "running out", "replace", "doctor", "prescribed", "health", "for work", "for school", "for class", "finals", "exam", "deadline", "essay", "assignment", "interview", "required", "lost my", "lost it"],
     usage: ["every day", "everyday", "daily", "every night", "commute", "gym", "use it", "all the time", "every week", "weekly", "times a"],
     price: ["sale", "deal", "discount", "% off", "black friday", "coupon", "cheap", "price", "cheaper", "limited time"],
     learn: ["learn", "practice", "hobby", "skill", "career", "lessons", "get into"],
@@ -101,16 +101,20 @@
   const LABEL = { 2: "strong", 1: "good", 0: "neutral", "-1": "weak", "-2": "impulse" };
   const LOW_EFFORT = /^(idk|i don'?t know|dunno|because|bc|cuz|just because|no|yes|yeah|yep|nah|whatever|why not|ok|okay|i want it|want|sure)\W*$/i;
 
+  // On the fence: earns the extra rounds in the Figma flow ("maybe, still thinking, trying").
+  const UNSURE = /\b(maybe|not sure|unsure|i guess|still thinking|thinking about it|trying|kind of|sort of|probably|idk if|torn|on the fence|i think so|might)\b/i;
+
   const claimsIn = (lower) => Object.keys(KEYWORDS).filter((k) => KEYWORDS[k].some((w) => lower.includes(w)));
 
   function evaluate(text) {
     const t = text.trim();
     const words = t.split(/\s+/).filter(Boolean).length;
-    if (words < 3 || LOW_EFFORT.test(t)) return { strength: "weak", engaged: false, claim: "vague" };
+    const unsure = UNSURE.test(t);
+    if (words < 3 || LOW_EFFORT.test(t)) return { strength: "weak", engaged: false, unsure, claim: "vague" };
     const claims = claimsIn(t.toLowerCase());
     const claim = claims[0] || "vague";
     const specific = /\d/.test(t) || words >= 14 || claims.length >= 2;
-    return { strength: LABEL[POINTS[claim][specific ? 1 : 0]], engaged: true, claim };
+    return { strength: LABEL[POINTS[claim][specific ? 1 : 0]], engaged: true, unsure, claim };
   }
 
   // ---------- facts from the page and settings ----------
@@ -181,8 +185,10 @@
         return { opening: LINES.opening(f), question: question(1, f, asked) };
       case "answer": {
         const e = evaluate(ctx.answer);
-        const ack = e.engaged ? LINES.acknowledge[e.claim](facts({ ...ctx, answers: [...ctx.answers, { ...e, text: ctx.answer }] })) : LINES.acknowledge.lowEffort();
         const f2 = facts({ ...ctx, answers: [...ctx.answers, { ...e, text: ctx.answer }] });
+        // How many times this kind of answer came up before, so reactions don't repeat.
+        f2.repeat = ctx.answers.filter((a) => (e.engaged ? a.engaged && a.claim === e.claim : !a.engaged)).length;
+        const ack = e.engaged ? LINES.acknowledge[e.claim](f2) : LINES.acknowledge.lowEffort(f2);
         return { acknowledge: ack, ...e, question: question(ctx.round + 1, f2, asked) };
       }
       case "witness":
