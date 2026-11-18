@@ -16,7 +16,7 @@
   "content_scripts": [
     {
       "matches": ["https://www.amazon.com/*", "https://www.amazon.ca/*", "http://localhost/*"],
-      "js": ["src/flow.js", "src/prices.js", "src/findings.js", "src/script.js", "src/content.js"],
+      "js": ["src/flow.js", "src/prices.js", "src/findings.js", "src/cast.js", "src/script.js", "src/content.js"],
       "run_at": "document_idle"
     }
   ],

@@ -47,6 +47,8 @@ The verdict comes from the score by default: each answer is scored as before, a 
 
 Try it offline: `npm run preview`, then open `http://localhost:8765/test/cart/preview-mvp.html?item=candle` or `?item=headphones` (the two R18 test products). URL options: `gift=on`, `skip=on`, `hint=on`, `quick=on`, `min=50`, `format=classic`. The console (`[MM]`) logs each trial's seconds and typed inputs, for the R3 under-60-seconds check; both are also saved in the history entry.
 
+**Who's in court changes per trial.** `src/cast.js` holds 8 judge and 8 witness presets: fixed combinations of 6 skin tones, hair style, hair color and glasses. Each trial picks one of each at random (logged as `Cast:` in the console and saved with the trial). See them all at `http://localhost:8765/test/cast.html`. Add or edit presets there; keep colors from its `SKIN` and `HAIR_COLOR` lists.
+
 Not done on purpose (MVP rules): the restate step, the risk question and the eyewitness are cut (R8); live prices and Amazon logins are out (R4). The witness still uses a separate request, because "not a second LLM" (C5) is already true: it's the same model.
 
 ## How it flows

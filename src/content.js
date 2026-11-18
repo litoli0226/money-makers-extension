@@ -491,6 +491,8 @@
     const transcript = [];
     const state = { answers: [], round: 1, totalRounds: flow.RULES.rounds, witnessCalled: false, witness: null };
     let warned = false;
+    const cast = globalThis.gicCast.castCourt();
+    log("Cast:", cast.ids);
 
     showPage(`
       <div class="topbar"><span id="round"></span><button class="chip-btn" data-act="leave">Leave trial ${ICON.x}</button></div>
@@ -498,11 +500,11 @@
         <div class="scene" id="scene" aria-hidden="true">
           <div class="seal-wall">${ICON.scale}</div>
           <div class="spot witness" data-who="witness">
-            <div class="figure">${FIGURE.witness}<span class="speech"><i></i><i></i><i></i></span></div>
+            <div class="figure">${cast.witness}<span class="speech"><i></i><i></i><i></i></span></div>
             <div class="stand"><span class="plate">Witness stand</span></div>
           </div>
           <div class="spot judge" data-who="judge">
-            <div class="figure">${FIGURE.judge}<span class="speech"><i></i><i></i><i></i></span></div>
+            <div class="figure">${cast.judge}<span class="speech"><i></i><i></i><i></i></span></div>
             <div class="bench"><span class="plate">The judge</span></div>
           </div>
           <div class="spot defendant" data-who="defendant">
@@ -684,6 +686,9 @@
     const profile = { goal: null, saved: 0 };
     const transcript = [];
     const state = { answers: [], objected: 0, witness: null, gift: null, title: "", inputs: 0, startedAt: Date.now() };
+    const cast = globalThis.gicCast.castCourt();
+    log("Cast:", cast.ids);
+    state.cast = cast.ids;
     let warned = false;
     let howStep = false; // the live hint only runs on "how" questions
 
@@ -693,11 +698,11 @@
         <div class="scene" id="scene" aria-hidden="true">
           <div class="seal-wall">${ICON.scale}</div>
           <div class="spot witness" data-who="witness">
-            <div class="figure">${FIGURE.witness}<span class="speech"><i></i><i></i><i></i></span></div>
+            <div class="figure">${cast.witness}<span class="speech"><i></i><i></i><i></i></span></div>
             <div class="stand"><span class="plate">Witness stand</span></div>
           </div>
           <div class="spot judge" data-who="judge">
-            <div class="figure">${FIGURE.judge}<span class="speech"><i></i><i></i><i></i></span></div>
+            <div class="figure">${cast.judge}<span class="speech"><i></i><i></i><i></i></span></div>
             <div class="bench"><span class="plate">The judge</span></div>
           </div>
           <div class="spot defendant" data-who="defendant">
@@ -977,7 +982,7 @@
     transcript.push({ role: "judge", text: res.reason });
     const seconds = Math.round((Date.now() - state.startedAt) / 1000);
     log(`MVP trial: ${seconds}s, ${state.inputs} typed inputs, objection ${state.objected ? "yes" : "no"}, verdict ${verdict} (by ${byModel ? "model" : "rule"}, rule said ${ruleVerdict}), score ${flow.score(state)}`);
-    const meta = { format: "mvp", seconds, inputs: state.inputs, objected: !!state.objected, verdictBy: byModel ? "model" : "rule", ruleVerdict, title: state.title };
+    const meta = { format: "mvp", cast: state.cast, seconds, inputs: state.inputs, objected: !!state.objected, verdictBy: byModel ? "model" : "rule", ruleVerdict, title: state.title };
     showMvpVerdict(item, settings, history, verdict, res.reason, res.signup, transcript, meta);
   }
 
@@ -1193,17 +1198,8 @@
     witness: svg('<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/><path d="M15.5 14.8l1 2.2 2.3.3-1.7 1.6.4 2.3-2-1.1"/>'),
   };
 
-  // Flat courtroom figures in the design-system palette.
-  const person = (body, extra = "", hair = "") =>
-    `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M10 64c0-14 9.5-22 22-22s22 8 22 22z" fill="${body}"/>${extra}<circle cx="32" cy="25" r="12" fill="#EAD7C3"/><circle cx="27.5" cy="25" r="1.4" fill="#2B2F36"/><circle cx="36.5" cy="25" r="1.4" fill="#2B2F36"/><path d="M28.5 30q3.5 2.6 7 0" fill="none" stroke="#2B2F36" stroke-width="1.4" stroke-linecap="round"/>${hair}</svg>`;
-  const FIGURE = {
-    // judge: robe, white collar, grey judicial wig
-    judge: person("#2B2F36", '<path d="M26 42l6 9 6-9z" fill="#FFFFFF"/>', '<path d="M19 24c-1-10 5-15 13-15s14 5 13 15c-2-5-7-8-13-8s-11 3-13 8z" fill="#C6CCD3"/><circle cx="19.5" cy="27" r="3" fill="#C6CCD3"/><circle cx="44.5" cy="27" r="3" fill="#C6CCD3"/><path class="brow l" d="M25 21.6h5"/><path class="brow r" d="M34 21.6h5"/>'),
-    // witness: gold jacket, glasses
-    witness: person("#C19F7C", '<path d="M28 42l4 6 4-6z" fill="#F3ECE4"/>', '<path d="M21 20c1-7 6-10 11-10s10 3 11 10c-3-3-7-4-11-4s-8 1-11 4z" fill="#7A5A3A"/><circle cx="27.5" cy="25" r="3.2" fill="none" stroke="#2B2F36" stroke-width="1.2"/><circle cx="36.5" cy="25" r="3.2" fill="none" stroke="#2B2F36" stroke-width="1.2"/><path d="M30.7 25h2.6" stroke="#2B2F36" stroke-width="1.2"/>'),
-    // you: ribbon-blue hoodie
-    defendant: person("#224786", "", '<path d="M20 22c0-8 5-12 12-12s12 4 12 12c-2-2-6-3-12-3s-10 1-12 3z" fill="#62666F"/>'),
-  };
+  // Courtroom figures: the judge and witness change per trial (presets in src/cast.js).
+  const FIGURE = { defendant: globalThis.gicCast.defendant() };
 
   const CONFETTI = [
     [8, 22, -20, "#224786"], [20, 6, 15, "#99B4A3"], [34, 30, 40, "#C19F7C"], [62, 10, -35, "#224786"],

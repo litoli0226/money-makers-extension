@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Court cast presets</title>
+<style>body{font-family:sans-serif;margin:24px;background:#F4F5F7;color:#2B2F36}h2{margin:24px 0 8px}.row{display:flex;flex-wrap:wrap;gap:12px}.cell{background:#fff;border:1px solid #DADADC;border-radius:12px;padding:10px;text-align:center;width:120px}.cell svg{width:96px;height:96px}.cell small{display:block;font-size:11px;color:#62666F;margin-top:4px}</style></head>
+<body>
+<h1>Court cast presets (src/cast.js)</h1>
+<p>Every combination a trial can show. One judge and one witness are picked at random per trial.</p>
+<h2>Judges</h2><div class="row" id="judges"></div>
+<h2>Witnesses</h2><div class="row" id="witnesses"></div>
+<script src="/src/cast.js"></script>
+<script>
+  const C = globalThis.gicCast;
+  const cell = (svg, id) => `<div class="cell">${svg}<small>${id}</small></div>`;
+  document.getElementById("judges").innerHTML = C.JUDGES.map((p) => cell(C.judge(p), p[0])).join("");
+  document.getElementById("witnesses").innerHTML = C.WITNESSES.map((p) => cell(C.witness(p), p[0])).join("");
+</script>
+</body></html>

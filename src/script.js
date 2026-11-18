@@ -311,7 +311,8 @@
       case "mvp_witness": {
         if (ctx.witness.id === "research") {
           const claims = (ctx.answers || []).map((a) => a.claim);
-          const fd = globalThis.gicFindings.findingFor(claims.find((c) => c !== "vague") || "vague");
+          // The latest argument decides the finding ("it's a gift" after "it smells nice" -> the gifts study).
+          const fd = globalThis.gicFindings.findingFor([...claims].reverse().find((c) => c !== "vague") || "vague");
           return { says: `Research witness, under oath. ${fd.line}`, cite: fd.cite, url: fd.url };
         }
         return { says: LINES.witness[ctx.witness.id](f) };
