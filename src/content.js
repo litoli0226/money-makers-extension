@@ -1192,7 +1192,7 @@
     // MVP: straight into the trial unless "Show the quick check first" is on.
     // MVP: the court notice (consent) comes first unless the switch turns it off.
     if (trialFormat(settings) === "mvp") {
-      if (settings.quickCheckFirst === "off") startMvpTrial(item, settings, history);
+      if (settings.courtNotice === "off") startMvpTrial(item, settings, history);
       else showCourtNotice(item, settings, history);
     } else showQuickCheck(item, settings, history);
     return true;
