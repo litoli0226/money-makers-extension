@@ -1211,11 +1211,23 @@
         return;
       }
       if (isCleared()) return;
+      // After the extension is reloaded in chrome://extensions, the copy of this
+      // script already running in an open tab loses its connection (chrome.storage
+      // becomes undefined). Don't block checkout; ask for a page refresh instead.
+      if (!chrome.runtime?.id || !chrome.storage?.local) {
+        log("The extension was reloaded. Refresh this page to bring the court back. Letting this click through.");
+        return;
+      }
       e.preventDefault();
       e.stopImmediatePropagation();
       pendingButton = btn;
-      const shown = await maybeCheckIn();
-      if (!shown) proceedWithPurchase(); // nothing to check, let it through
+      let shown = false;
+      try {
+        shown = await maybeCheckIn();
+      } catch (err) {
+        log("Check-in failed, letting the click through:", err?.message || err);
+      }
+      if (!shown) proceedWithPurchase(); // nothing to check (or an error), let it through
     },
     true
   );
