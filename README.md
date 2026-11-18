@@ -22,7 +22,7 @@ rules doc "Money Makers: rules the judge runs on (MVP)"; the R and C codes below
 match it. **Settings → Court settings → MVP test switches** picks the format and
 the options the team hasn't settled yet.
 
-The MVP spine (R6):
+The MVP spine (R6), after a **court notice**: Matthew's quick check panel restyled as a consent screen ("Before you buy, the court would like a word."), showing the item, its price and the judge who'll hear the case, with "Take it to court", "Skip the court, go to checkout" and "Never summon me for this item".
 
 1. **Name.** "Forgive me, what's your name, defendant?" Pick Mr., Mrs., Ms., Mx. or your own; the surname is always Moneybags. Fixed copy, no AI call (C1 option a).
 2. **Item, price, how.** The judge names the item and price from the page, adds one price line from `src/prices.js` (R11), and asks how it will make your life better.
@@ -38,14 +38,14 @@ The verdict comes from the score by default: each answer is scored as before, a 
 |---|---|---|
 | Trial format | | MVP |
 | Minimum total for a trial | R5 | $1 |
-| Quick check before the trial | R5 | Off |
+| Court notice (consent) before the trial | R5 | On |
 | Skip "respond" after an objection | C1 | Off (option a) |
 | Who picks the verdict | C2 | The rule |
 | Gift buttons | C4 | Off |
 | Live "how, not why" hint while typing | | Off |
 | Temperature (OpenRouter) | R11, R16 | Model default |
 
-Try it offline: `npm run preview`, then open `http://localhost:8765/test/cart/preview-mvp.html?item=candle` or `?item=headphones` (the two R18 test products). URL options: `gift=on`, `skip=on`, `hint=on`, `quick=on`, `min=50`, `format=classic`. The console (`[MM]`) logs each trial's seconds and typed inputs, for the R3 under-60-seconds check; both are also saved in the history entry.
+Try it offline: `npm run preview`, then open `http://localhost:8765/test/cart/preview-mvp.html?item=candle` or `?item=headphones` (the two R18 test products). URL options: `gift=on`, `skip=on`, `hint=on`, `notice=off`, `min=50`, `format=classic`. The console (`[MM]`) logs each trial's seconds and typed inputs, for the R3 under-60-seconds check; both are also saved in the history entry.
 
 **Who's in court changes per trial.** `src/cast.js` holds 8 judge and 8 witness presets: fixed combinations of 6 skin tones, hair style, hair color and glasses. Each trial picks one of each at random (logged as `Cast:` in the console and saved with the trial). See them all at `http://localhost:8765/test/cast.html`. Add or edit presets there; keep colors from its `SKIN` and `HAIR_COLOR` lists.
 

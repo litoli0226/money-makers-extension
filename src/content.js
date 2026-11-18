@@ -388,6 +388,48 @@
     });
   }
 
+  // ---------- Court notice (MVP consent screen) ----------
+  // Matthew's quick check panel, restyled: same spot, same three ways out, in the
+  // courtroom voice. Copy lives in MVP_LINES.notice in src/script.js.
+
+  function showCourtNotice(item, settings, history) {
+    const N = globalThis.gicMvpLines.notice;
+    const cast = globalThis.gicCast.castCourt();
+    const short = globalThis.gicShortName(item.label);
+    const the = item.items.length > 1 ? "this cart" : `the ${short}`;
+    const price = money(item.total, item.currency);
+    showPanel(`
+      <div class="panel-head"><span class="notice-head">${ICON.scale}${esc(N.head)}</span><button class="icon-btn" data-act="close" aria-label="Close">${ICON.x}</button></div>
+      <div class="card case-card">
+        <div class="case-judge">${cast.judge}</div>
+        <div class="case-text">
+          <span class="tiny">The case before the court</span>
+          <b>${esc(item.items.length > 1 ? "This cart" : short)}</b>
+          <span class="case-price">${esc(price)}</span>
+        </div>
+      </div>
+      <h2 class="h2">${esc(N.title)}</h2>
+      <p class="muted">${esc(N.body({ the }))}</p>
+      <div class="stack">
+        <button class="btn primary" data-act="court">${esc(N.start)}</button>
+        <button class="btn outline" data-act="skip">${esc(N.skip)}</button>
+      </div>
+      <button class="link" data-act="never">${esc(N.never)}</button>`);
+    $("[data-act=court]").focus();
+    const skip = async (outcome) => {
+      await logOutcome(item, outcome, { where: "notice", format: "mvp" });
+      proceedWithPurchase();
+    };
+    on("[data-act=close]", () => skip("not now"));
+    on("[data-act=skip]", () => skip("skipped court"));
+    on("[data-act=court]", () => startMvpTrial(item, settings, history, cast));
+    on("[data-act=never]", async () => {
+      const { neverItems } = await getStore();
+      await chrome.storage.local.set({ neverItems: [...new Set([item.label, ...neverItems])].slice(0, 500) });
+      await skip("never");
+    });
+  }
+
   // ---------- 03 / 11 Saved ----------
 
   async function saveIt(item, settings, history, where, style, transcript = [], extra = {}) {
@@ -679,14 +721,14 @@
   const trialFormat = (settings) => settings.trialFormat || "mvp";
   const TITLES = ["Mr.", "Mrs.", "Ms.", "Mx."];
 
-  async function startMvpTrial(item, settings, history) {
+  async function startMvpTrial(item, settings, history, castFromNotice = null) {
     const L = globalThis.gicMvpLines;
     const short = globalThis.gicShortName(item.label);
     // R17: the guest trial reads the answers and the price, not the goal.
     const profile = { goal: null, saved: 0 };
     const transcript = [];
     const state = { answers: [], objected: 0, witness: null, gift: null, title: "", inputs: 0, startedAt: Date.now() };
-    const cast = globalThis.gicCast.castCourt();
+    const cast = castFromNotice || globalThis.gicCast.castCourt(); // same judge as on the court notice
     log("Cast:", cast.ids);
     state.cast = cast.ids;
     let warned = false;
@@ -1148,8 +1190,11 @@
     }
     log("Checking in on", item);
     // MVP: straight into the trial unless "Show the quick check first" is on.
-    if (trialFormat(settings) === "mvp" && settings.quickCheckFirst !== "on") startMvpTrial(item, settings, history);
-    else showQuickCheck(item, settings, history);
+    // MVP: the court notice (consent) comes first unless the switch turns it off.
+    if (trialFormat(settings) === "mvp") {
+      if (settings.quickCheckFirst === "off") startMvpTrial(item, settings, history);
+      else showCourtNotice(item, settings, history);
+    } else showQuickCheck(item, settings, history);
     return true;
   }
 
@@ -1401,6 +1446,15 @@ label input:focus { border-color: var(--blue); }
 .typing .bubble i { width: 6px; height: 6px; border-radius: 50%; background: var(--slate); animation: blink 1s infinite; }
 .typing .bubble i:nth-child(2) { animation-delay: .15s; }
 .typing .bubble i:nth-child(3) { animation-delay: .3s; }
+/* ---- court notice (MVP consent) ---- */
+.notice-head { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }
+.notice-head svg { width: 16px; height: 16px; }
+.case-card { display: flex; align-items: center; gap: 14px; padding: 12px 14px; }
+.case-judge svg { width: 52px; height: 52px; display: block; }
+.case-judge .brow { stroke-width: 1.8; stroke-linecap: round; }
+.case-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.case-text b { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.case-price { font-size: 22px; font-weight: 700; }
 /* ---- guest-trial MVP ---- */
 .picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px 14px; border-top: 1px solid var(--line); }
 .picker .chip { padding: 8px 14px; font-size: 14px; }

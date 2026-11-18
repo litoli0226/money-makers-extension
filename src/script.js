@@ -219,6 +219,15 @@
   // =====================================================================
 
   const MVP_LINES = {
+    // Court notice: the consent screen before the trial (Matthew's quick check, restyled).
+    notice: {
+      head: "Court notice",
+      title: "Before you buy, the court would like a word.",
+      body: (f) => `The judge will ask you two or three questions about ${f.the}. About a minute. The verdict is advice. You always decide.`,
+      start: "Take it to court",
+      skip: "Skip the court, go to checkout",
+      never: "Never summon me for this item",
+    },
     name: "Forgive me, what's your name, defendant?",
     item: (f) => `${f.defendant}, the court has your case: ${f.the}, for ${f.price}.`,
     how: (f) => `And how will ${f.it} make your life better, defendant?`,

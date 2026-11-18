@@ -7,7 +7,7 @@
 <p>Guest-trial MVP with fake storage and the scripted court. The two R18 test products:
 <a href="?item=candle">candle ($34)</a> · <a href="?item=headphones">headphones ($210)</a>.
 Switches as URL options, for example <code>?item=candle&amp;gift=on&amp;hint=on</code>:
-<code>gift</code> (C4), <code>skip</code> (C1 b), <code>hint</code> (live hint), <code>quick</code> (quick check first), <code>min=50</code> (R5), <code>format=classic</code>.</p>
+<code>gift</code> (C4), <code>skip</code> (C1 b), <code>hint</code> (live hint), <code>notice=off</code> (skip the court notice), <code>min=50</code> (R5), <code>format=classic</code>.</p>
 <div id="sc-active-cart"></div>
 <form><input type="submit" name="proceedToRetailCheckout" value="Proceed to checkout"></form>
 <script>
@@ -26,7 +26,7 @@ Switches as URL options, for example <code>?item=candle&amp;gift=on&amp;hint=on<
       giftButtons: q.get("gift") || "off",
       c1SkipRespond: q.get("skip") || "off",
       liveHint: q.get("hint") || "off",
-      quickCheckFirst: q.get("quick") || "off",
+      quickCheckFirst: q.get("notice") || "on",
       minTotal: q.get("min") || "",
     },
     history: [], recess: {}, neverItems: [], wishlist: [], signups: [],
