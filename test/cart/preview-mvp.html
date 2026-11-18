@@ -1,0 +1,46 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Preview: guest-trial MVP (fake chrome API)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Urbanist:wght@400..700&display=swap">
+<style>body{font-family:sans-serif;max-width:700px;margin:40px auto}.sc-list-item{border-bottom:1px solid #ddd;padding:12px 0}code{background:#eee;padding:1px 4px}</style></head>
+<body>
+<h1>Shopping Cart (MVP preview)</h1>
+<p>Guest-trial MVP with fake storage and the scripted court. The two R18 test products:
+<a href="?item=candle">candle ($34)</a> · <a href="?item=headphones">headphones ($210)</a>.
+Switches as URL options, for example <code>?item=candle&amp;gift=on&amp;hint=on</code>:
+<code>gift</code> (C4), <code>skip</code> (C1 b), <code>hint</code> (live hint), <code>quick</code> (quick check first), <code>min=50</code> (R5), <code>format=classic</code>.</p>
+<div id="sc-active-cart"></div>
+<form><input type="submit" name="proceedToRetailCheckout" value="Proceed to checkout"></form>
+<script>
+  const q = new URLSearchParams(location.search);
+  const ITEMS = {
+    candle: { asin: "B0TESTCNDL", price: 34, title: "Yankee Candle Balsam & Cedar Scented Candle, Large Jar" },
+    headphones: { asin: "B0TESTHDPH", price: 210, title: "Noise Cancelling Headphones, Wireless Over-Ear Bluetooth" },
+  };
+  const it = ITEMS[q.get("item")] || ITEMS.headphones;
+  document.getElementById("sc-active-cart").innerHTML =
+    `<div class="sc-list-item" data-asin="${it.asin}" data-price="${it.price}" data-quantity="1" data-producttitle="${it.title}">${it.title}, $${it.price}</div>`;
+  const store = {
+    settings: {
+      mode: "scripted",
+      trialFormat: q.get("format") || "mvp",
+      giftButtons: q.get("gift") || "off",
+      c1SkipRespond: q.get("skip") || "off",
+      liveHint: q.get("hint") || "off",
+      quickCheckFirst: q.get("quick") || "off",
+      minTotal: q.get("min") || "",
+    },
+    history: [], recess: {}, neverItems: [], wishlist: [], signups: [],
+  };
+  window.__store = store;
+  window.chrome = {
+    storage: { local: { get: async (d) => ({ ...(typeof d === "object" ? d : {}), ...store }), set: async (o) => Object.assign(store, o) } },
+    runtime: { sendMessage: async () => ({ ok: false, error: "preview" }) },
+  };
+  document.addEventListener("submit", (e) => e.preventDefault());
+</script>
+<script src="/src/flow.js"></script>
+<script src="/src/prices.js"></script>
+<script src="/src/findings.js"></script>
+<script src="/src/script.js"></script>
+<script src="/src/content.js"></script>
+</body></html>

@@ -379,7 +379,7 @@
     });
     on("[data-act=setgoal]", () => chrome.runtime.sendMessage({ type: "openOptions" }));
     on("[data-act=save]", () => saveIt(item, settings, history, "checkout", "panel"));
-    on("[data-act=court]", () => startTrial(item, settings, history));
+    on("[data-act=court]", () => (trialFormat(settings) === "mvp" ? startMvpTrial(item, settings, history) : startTrial(item, settings, history)));
     on("[data-act=never]", async () => {
       const { neverItems } = await getStore();
       await chrome.storage.local.set({ neverItems: [...new Set([item.label, ...neverItems])].slice(0, 500) });
@@ -390,10 +390,10 @@
 
   // ---------- 03 / 11 Saved ----------
 
-  async function saveIt(item, settings, history, where, style, transcript = []) {
+  async function saveIt(item, settings, history, where, style, transcript = [], extra = {}) {
     const profile = profileFrom(settings, history); // before this save
     const m = goalMath(profile, item);
-    await logOutcome(item, "saved", { where, transcript });
+    await logOutcome(item, "saved", { where, transcript, ...extra });
     await addToWishlist(item);
     pendingButton = null;
     const short = globalThis.gicShortName(item.label);
@@ -481,7 +481,8 @@
     } else {
       await wait(650); // a beat so it doesn't feel instant
     }
-    return globalThis.gicScripted(stage, ctx);
+    const isMvp = stage.startsWith("mvp_") || stage === "gift_check";
+    return isMvp ? globalThis.gicScriptedMvp(stage, ctx) : globalThis.gicScripted(stage, ctx);
   }
 
   async function startTrial(item, settings, history) {
@@ -667,6 +668,373 @@
     };
   }
 
+  // ---------- Guest-trial MVP (branch guest-trial-mvp) ----------
+  //
+  // The team's MVP spine (rules doc R6): name -> item + "how" -> objection once if
+  // it hears a reason -> witness -> respond -> deliberate -> verdict + sign-up.
+  // The classic trial above stays as it was; Settings -> Trial format switches.
+
+  const trialFormat = (settings) => settings.trialFormat || "mvp";
+  const TITLES = ["Mr.", "Mrs.", "Ms.", "Mx."];
+
+  async function startMvpTrial(item, settings, history) {
+    const L = globalThis.gicMvpLines;
+    const short = globalThis.gicShortName(item.label);
+    // R17: the guest trial reads the answers and the price, not the goal.
+    const profile = { goal: null, saved: 0 };
+    const transcript = [];
+    const state = { answers: [], objected: 0, witness: null, gift: null, title: "", inputs: 0, startedAt: Date.now() };
+    let warned = false;
+    let howStep = false; // the live hint only runs on "how" questions
+
+    showPage(`
+      <div class="topbar"><span id="round"></span><button class="chip-btn" data-act="leave">Leave trial ${ICON.x}</button></div>
+      <div class="court-stage">
+        <div class="scene" id="scene" aria-hidden="true">
+          <div class="seal-wall">${ICON.scale}</div>
+          <div class="spot witness" data-who="witness">
+            <div class="figure">${FIGURE.witness}<span class="speech"><i></i><i></i><i></i></span></div>
+            <div class="stand"><span class="plate">Witness stand</span></div>
+          </div>
+          <div class="spot judge" data-who="judge">
+            <div class="figure">${FIGURE.judge}<span class="speech"><i></i><i></i><i></i></span></div>
+            <div class="bench"><span class="plate">The judge</span></div>
+          </div>
+          <div class="spot defendant" data-who="defendant">
+            <div class="figure">${FIGURE.defendant}<span class="speech"><i></i><i></i><i></i></span></div>
+            <div class="table"><span class="plate">You</span></div>
+          </div>
+        </div>
+        <div class="chat" role="log" aria-label="Courtroom">
+          <div class="chat-head"><span class="av judge">${ICON.scale}</span><span><b>The judge</b><small>Hearing your case for ${item.items.length > 1 ? "this cart" : `the ${esc(short)}`}</small></span></div>
+          <div class="log" id="log" aria-live="polite"></div>
+          <div id="controls"></div>
+        </div>
+        <p class="fine">No right or wrong answers. The verdict is advice. You always decide.</p>
+      </div>`, "court");
+
+    const logEl = $("#log");
+    const controls = $("#controls");
+    const roundEl = $("#round");
+    const scene = $("#scene");
+    const judgeSpot = scene.querySelector(".spot.judge");
+    let asked = 0;
+    const setRound = (label) => (roundEl.textContent = label || `Question ${asked}`);
+    setRound("Your name");
+
+    on("[data-act=leave]", () => {
+      state.left = true;
+      logOutcome(item, "left", { where: "courtroom", format: "mvp", transcript, seconds: secs() });
+      pendingButton = null;
+      clearUI();
+      if (pageType() === "checkout") location.href = `${location.origin}/cart`;
+    });
+
+    const secs = () => Math.round((Date.now() - state.startedAt) / 1000);
+    const scroll = () => (logEl.scrollTop = logEl.scrollHeight);
+    function setSpeaker(who, thinking = false) {
+      for (const spot of scene.querySelectorAll(".spot")) {
+        spot.classList.toggle("talking", spot.dataset.who === who);
+        spot.classList.toggle("thinking", thinking && spot.dataset.who === who);
+      }
+    }
+    function say(role, text, opts = {}) {
+      if (!text) return;
+      transcript.push({ role, text });
+      setSpeaker(role);
+      const row = document.createElement("div");
+      if (role === "defendant") {
+        row.className = "msg me";
+        row.innerHTML = `<div class="bubble">${esc(text)}</div>`;
+      } else if (role === "witness") {
+        row.className = "msg witness";
+        row.innerHTML = `<span class="av gold">${ICON.witness}</span><div><div class="who">${esc(state.witness.name)} <span>· ${esc(state.witness.role)}</span></div><div class="bubble">${esc(text)}</div>${
+          opts.cite ? `<div class="cite">${esc(opts.cite)}</div>` : ""
+        }</div>`;
+      } else {
+        row.className = "msg judge";
+        row.innerHTML = `<span class="av judge">${ICON.scale}</span><div class="bubble${opts.question ? " q" : ""}">${esc(text)}</div>`;
+      }
+      logEl.appendChild(row);
+      scroll();
+    }
+    function moment(text) {
+      transcript.push({ role: "court", text });
+      const row = document.createElement("div");
+      row.className = "moment";
+      row.textContent = text;
+      logEl.appendChild(row);
+      scroll();
+    }
+    function typing(who = "judge") {
+      setSpeaker(who, true);
+      const row = document.createElement("div");
+      row.className = `msg ${who} typing`;
+      row.innerHTML = `<span class="av ${who === "witness" ? "gold" : "judge"}">${who === "witness" ? ICON.witness : ICON.scale}</span><div class="bubble"><i></i><i></i><i></i></div>`;
+      logEl.appendChild(row);
+      scroll();
+      return () => row.remove();
+    }
+    const readPause = (t) => wait(Math.min(1400, 350 + String(t || "").length * 12));
+    const fallbackNote = (err) => {
+      if (warned) return;
+      warned = true;
+      moment(`AI court unavailable (${err}). Using the scripted court for now.`);
+    };
+    const ctx = (extra = {}) => ({
+      format: "mvp",
+      item: { label: item.label, short, total: item.total, currency: item.currency, items: item.items, site: item.site },
+      profile,
+      transcript,
+      answers: state.answers,
+      title: state.title,
+      defendant_name: state.title ? `${state.title} Moneybags` : "Moneybags",
+      ...extra,
+    });
+    async function ask(stage, extra, who = "judge") {
+      const stop = typing(who);
+      try {
+        return await courtTurn(stage, ctx(extra), settings, fallbackNote);
+      } finally {
+        stop();
+      }
+    }
+
+    // ----- inputs: each returns a promise for what the defendant gave -----
+
+    // Free text (ask_text). The live hint (Settings switch) nudges toward "how".
+    function askText(placeholder) {
+      return new Promise((resolve) => {
+        controls.innerHTML = `
+          <p class="live-hint" id="hint" hidden>${esc(L.howPlaceholder)}</p>
+          <form class="composer" id="composer">
+            <input id="answer" autocomplete="off" placeholder="${esc(placeholder || "Make your case")}" />
+            <button class="send" aria-label="Send">${ICON.send}</button>
+          </form>`;
+        const input = $("#answer");
+        const hint = $("#hint");
+        scroll(); // the controls take room from the log; keep the last line in view
+        input.focus();
+        input.addEventListener("keydown", (e) => e.stopPropagation());
+        let t;
+        input.addEventListener("input", () => {
+          if (input.value) setSpeaker("defendant", true);
+          if (!howStep || settings.liveHint !== "on") return;
+          clearTimeout(t);
+          t = setTimeout(() => {
+            const v = input.value.trim();
+            hint.hidden = !(v.split(/\s+/).length >= 4 && globalThis.gicHowKind(v) !== "mechanism");
+          }, 250);
+        });
+        $("#composer").onsubmit = (e) => {
+          e.preventDefault();
+          const v = input.value.trim();
+          if (!v) return;
+          controls.innerHTML = "";
+          state.inputs += 1;
+          say("defendant", v);
+          resolve(v);
+        };
+      });
+    }
+
+    // Buttons (the "button moment": title picker, gift check).
+    function askButtons(options, { other = false } = {}) {
+      return new Promise((resolve) => {
+        controls.innerHTML = `<div class="picker">${options.map((o) => `<button class="chip" data-pick="${esc(o)}">${esc(o)}</button>`).join("")}${
+          other ? `<input id="other" placeholder="Or type your own" autocomplete="off" /><button class="chip" data-pick="__other">OK</button>` : ""
+        }</div>`;
+        const otherEl = $("#other");
+        scroll();
+        otherEl?.addEventListener("keydown", (e) => {
+          e.stopPropagation();
+          if (e.key === "Enter") layer.querySelector("[data-pick=__other]").click();
+        });
+        for (const b of layer.querySelectorAll("[data-pick]")) {
+          b.onclick = () => {
+            const v = b.dataset.pick === "__other" ? (otherEl.value.trim() || "") : b.dataset.pick;
+            if (!v) return otherEl.focus();
+            controls.innerHTML = "";
+            resolve(v);
+          };
+        }
+      });
+    }
+
+    // ----- 1. Name (fixed copy, C1 option a: the title tap doesn't count as an input) -----
+    say("judge", L.name, { question: true });
+    state.title = await askButtons(TITLES, { other: true });
+    say("defendant", `${state.title} Moneybags`);
+    if (state.left) return;
+
+    // ----- 2. Item, price line, "how" -----
+    const r0 = await ask("mvp_item");
+    say("judge", r0.line);
+    await readPause(r0.line);
+    if (r0.price_line) {
+      say("judge", r0.price_line);
+      await readPause(r0.price_line);
+    }
+    asked = 1;
+    setRound();
+    say("judge", r0.question, { question: true });
+
+    const howAnswer = async (objectionAllowed) => {
+      howStep = true;
+      const a = await askText(L.howPlaceholder);
+      howStep = false;
+      const r = await ask("mvp_how", { answer: a, objection_allowed: objectionAllowed });
+      state.answers.push({ text: a, kind: r.kind, strength: r.strength, engaged: r.engaged !== false, unsure: !!r.unsure, claim: r.claim });
+      log("How answer:", r.kind, r.strength, r.claim, "score", flow.score(state));
+      return r;
+    };
+
+    // ----- 3. Objection, once, only after a reason (R7) -----
+    let r1 = await howAnswer(true);
+    if (state.left) return;
+    if (flow.mvpAfterHow(state, r1.kind) === "object" && r1.objection) {
+      state.objected += 1;
+      judgeSpot.classList.add("eyebrow"); // set_expression: eyebrow_raised
+      moment("The judge raises an eyebrow.");
+      await wait(500);
+      say("judge", r1.objection, { question: true });
+      asked = 2;
+      setRound();
+      r1 = await howAnswer(false);
+      judgeSpot.classList.remove("eyebrow");
+      if (state.left) return;
+    }
+    say("judge", r1.acknowledge);
+    await readPause(r1.acknowledge);
+
+    // ----- optional: gift buttons (C4 switch) -----
+    if (settings.giftButtons === "on" && state.answers.some((a) => a.claim === "gift")) {
+      const g = await ask("gift_check");
+      say("judge", g.question, { question: true });
+      const pick = await askButtons(["It's a gift", "It's not a gift"]);
+      say("defendant", pick);
+      state.gift = pick === "It's a gift";
+    }
+
+    // ----- 4. Witness, every trial -----
+    say("judge", L.callWitness);
+    moment("The court calls an expert witness.");
+    state.witness = flow.mvpPickWitness(state);
+    const stand = scene.querySelector(".spot.witness");
+    stand.classList.add("called");
+    stand.querySelector(".plate").textContent = state.witness.name;
+    await wait(600);
+    const w = await ask("mvp_witness", { witness: state.witness }, "witness");
+    const finding = w.cite ? w : globalThis.gicFindings.FINDINGS.find((f) => f.id === w.finding_id);
+    say("witness", w.says, { cite: finding?.cite });
+    await readPause(w.says);
+    if (state.left) return;
+
+    // ----- 5. Respond to the witness (skipped after an objection if C1 (b) is on) -----
+    if (flow.mvpAskRespond(state, settings)) {
+      asked += 1;
+      setRound();
+      const q = await ask("mvp_respond_q", { witness: state.witness });
+      say("judge", q.question, { question: true });
+      const a = await askText("Your response");
+      const r = await ask("mvp_respond", { answer: a });
+      state.answers.push({ text: a, strength: r.strength, engaged: r.engaged !== false, unsure: !!r.unsure, claim: r.claim });
+      say("judge", r.acknowledge);
+      await readPause(r.acknowledge);
+    }
+    if (state.left) return;
+
+    // ----- 6. Deliberate, 7. verdict + sign-up -----
+    setRound("Deliberating");
+    return mvpDeliberate(item, settings, history, state, transcript, ctx);
+  }
+
+  async function mvpDeliberate(item, settings, history, state, transcript, ctx) {
+    const byModel = settings.c2VerdictBy === "model" && settings.mode && settings.mode !== "scripted";
+    const ruleVerdict = flow.mvpVerdict(state);
+    const n = state.answers.length;
+    const steps = [
+      [`Reviewing your ${n === 1 ? "answer" : `${n} answers`}`, `${n} answer${n === 1 ? "" : "s"} on the record`],
+      ["Considering the expert testimony", state.witness?.name || ""],
+      ["Weighing how against why", ""],
+    ];
+    showPage(`
+      <div class="card-lg">
+        <div class="seal soft ring">${ICON.scale}</div>
+        <h2 class="h2 center">The court is deliberating…</h2>
+        <p class="muted center">Hang tight, this takes a few seconds.</p>
+        <ul class="checks">${steps.map(([t, s]) => `<li><span class="tick"></span><span><b>${esc(t)}</b>${s ? `<small>${esc(s)}</small>` : ""}</span></li>`).join("")}</ul>
+      </div>`, "centered");
+    const resP = courtTurn("mvp_verdict", ctx({ verdict: ruleVerdict, verdict_by: byModel ? "model" : "rule", gift: state.gift }), settings);
+    for (const li of layer.querySelectorAll(".checks li")) {
+      li.classList.add("active");
+      await wait(1200);
+      li.classList.replace("active", "done");
+      await wait(200);
+    }
+    const res = await resP;
+    const verdict = byModel && ["approve", "sleep", "denied"].includes(res.verdict) ? res.verdict : ruleVerdict;
+    transcript.push({ role: "judge", text: res.reason });
+    const seconds = Math.round((Date.now() - state.startedAt) / 1000);
+    log(`MVP trial: ${seconds}s, ${state.inputs} typed inputs, objection ${state.objected ? "yes" : "no"}, verdict ${verdict} (by ${byModel ? "model" : "rule"}, rule said ${ruleVerdict}), score ${flow.score(state)}`);
+    const meta = { format: "mvp", seconds, inputs: state.inputs, objected: !!state.objected, verdictBy: byModel ? "model" : "rule", ruleVerdict, title: state.title };
+    showMvpVerdict(item, settings, history, verdict, res.reason, res.signup, transcript, meta);
+  }
+
+  // Verdict titles. Writers (Oli): R15 wording is still open; change it here.
+  const MVP_VERDICTS = {
+    approve: { title: "Case approved", seal: "green", icon: "check", box: "green", primary: "Continue to checkout", secondary: "Actually, save it instead" },
+    sleep: { title: "Sleep on it", seal: "blue", icon: "clock", box: "blue", primary: "Save it for now", secondary: "Buy it anyway" },
+    denied: { title: "Case denied", seal: "plain", icon: "scale", box: "plain", primary: "Keep my money", secondary: "Appeal and buy anyway" },
+  };
+
+  function showMvpVerdict(item, settings, history, verdict, reason, signupLine, transcript, meta) {
+    const V = MVP_VERDICTS[verdict];
+    showPage(`
+      <div class="card-lg">
+        <div class="seal ${V.seal} ring">${ICON[V.icon]}</div>
+        <p class="kicker center">The court rules…</p>
+        <h2 class="h1 center">${esc(V.title)}</h2>
+        <div class="reason r-${V.box}">${esc(reason)}</div>
+        <div class="card signup" id="signup">
+          <p class="signup-line"><span class="av judge">${ICON.scale}</span><span>${esc(signupLine)}</span></p>
+          <form id="signupForm" class="signup-row">
+            <input id="email" type="email" placeholder="you@school.edu" autocomplete="email" />
+            <button class="btn outline small">Sign up</button>
+          </form>
+        </div>
+        <button class="btn primary" data-act="primary">${esc(V.primary)}</button>
+        <button class="link" data-act="secondary">${esc(V.secondary)}</button>
+      </div>`, "centered");
+    const record = { where: "courtroom", verdict, transcript, ...meta };
+    const email = $("#email");
+    email.addEventListener("keydown", (e) => e.stopPropagation());
+    // Sign-up (show_signup). There's no account system yet: the email stays in this browser.
+    $("#signupForm").onsubmit = async (e) => {
+      e.preventDefault();
+      if (!/^\S+@\S+\.\S+$/.test(email.value.trim())) return email.focus();
+      const { signups = [] } = await chrome.storage.local.get({ signups: [] });
+      signups.unshift({ date: Date.now(), email: email.value.trim(), line: signupLine, verdict, title: meta.title });
+      await chrome.storage.local.set({ signups: signups.slice(0, 50) });
+      $("#signup").innerHTML = `<p class="signup-line"><span class="av judge">${ICON.check}</span><span>You're signed up. The court will be in touch.</span></p>`;
+      record.signedUp = true;
+    };
+
+    const goSave = () => saveIt(item, settings, history, "courtroom", "page", transcript, { verdict, ...meta, signedUp: record.signedUp });
+    on("[data-act=primary]", async () => {
+      if (verdict === "approve") {
+        await logOutcome(item, "approved", record);
+        return proceedWithPurchase();
+      }
+      return goSave();
+    });
+    on("[data-act=secondary]", async () => {
+      if (verdict === "approve") return goSave();
+      await logOutcome(item, "bought", record);
+      showTotallyOkay({ goal: null });
+    });
+  }
+
   // ---------- 08 Deliberating ----------
 
   async function deliberate(item, settings, history, profile, state, transcript, ctx) {
@@ -767,8 +1135,16 @@
       log(`Skipping: ${skip}.`);
       return false;
     }
+    // R5: a trial starts when the total is at least the minimum (default $1).
+    const min = settings.minTotal === undefined || settings.minTotal === "" ? 1 : Number(settings.minTotal);
+    if (item.total != null && item.total < min) {
+      log(`Skipping: total ${item.total} is under the $${min} minimum.`);
+      return false;
+    }
     log("Checking in on", item);
-    showQuickCheck(item, settings, history);
+    // MVP: straight into the trial unless "Show the quick check first" is on.
+    if (trialFormat(settings) === "mvp" && settings.quickCheckFirst !== "on") startMvpTrial(item, settings, history);
+    else showQuickCheck(item, settings, history);
     return true;
   }
 
@@ -822,7 +1198,7 @@
     `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M10 64c0-14 9.5-22 22-22s22 8 22 22z" fill="${body}"/>${extra}<circle cx="32" cy="25" r="12" fill="#EAD7C3"/><circle cx="27.5" cy="25" r="1.4" fill="#2B2F36"/><circle cx="36.5" cy="25" r="1.4" fill="#2B2F36"/><path d="M28.5 30q3.5 2.6 7 0" fill="none" stroke="#2B2F36" stroke-width="1.4" stroke-linecap="round"/>${hair}</svg>`;
   const FIGURE = {
     // judge: robe, white collar, grey judicial wig
-    judge: person("#2B2F36", '<path d="M26 42l6 9 6-9z" fill="#FFFFFF"/>', '<path d="M19 24c-1-10 5-15 13-15s14 5 13 15c-2-5-7-8-13-8s-11 3-13 8z" fill="#C6CCD3"/><circle cx="19.5" cy="27" r="3" fill="#C6CCD3"/><circle cx="44.5" cy="27" r="3" fill="#C6CCD3"/>'),
+    judge: person("#2B2F36", '<path d="M26 42l6 9 6-9z" fill="#FFFFFF"/>', '<path d="M19 24c-1-10 5-15 13-15s14 5 13 15c-2-5-7-8-13-8s-11 3-13 8z" fill="#C6CCD3"/><circle cx="19.5" cy="27" r="3" fill="#C6CCD3"/><circle cx="44.5" cy="27" r="3" fill="#C6CCD3"/><path class="brow l" d="M25 21.6h5"/><path class="brow r" d="M34 21.6h5"/>'),
     // witness: gold jacket, glasses
     witness: person("#C19F7C", '<path d="M28 42l4 6 4-6z" fill="#F3ECE4"/>', '<path d="M21 20c1-7 6-10 11-10s10 3 11 10c-3-3-7-4-11-4s-8 1-11 4z" fill="#7A5A3A"/><circle cx="27.5" cy="25" r="3.2" fill="none" stroke="#2B2F36" stroke-width="1.2"/><circle cx="36.5" cy="25" r="3.2" fill="none" stroke="#2B2F36" stroke-width="1.2"/><path d="M30.7 25h2.6" stroke="#2B2F36" stroke-width="1.2"/>'),
     // you: ribbon-blue hoodie
@@ -1029,6 +1405,22 @@ label input:focus { border-color: var(--blue); }
 .typing .bubble i { width: 6px; height: 6px; border-radius: 50%; background: var(--slate); animation: blink 1s infinite; }
 .typing .bubble i:nth-child(2) { animation-delay: .15s; }
 .typing .bubble i:nth-child(3) { animation-delay: .3s; }
+/* ---- guest-trial MVP ---- */
+.picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px 14px; border-top: 1px solid var(--line); }
+.picker .chip { padding: 8px 14px; font-size: 14px; }
+.picker input { flex: 1; min-width: 140px; border: 1.5px solid var(--paper); border-radius: 12px; padding: 8px 12px; font-size: 14px; outline: none; }
+.picker input:focus { border-color: var(--blue); }
+.live-hint { margin: 0; padding: 8px 14px 0; font-size: 12.5px; font-weight: 600; color: var(--gold-deep); }
+.cite { margin-top: 4px; font-size: 11.5px; color: var(--seal); }
+.signup { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+.signup-line { margin: 0; display: flex; gap: 10px; align-items: center; font-weight: 600; }
+.signup-row { display: flex; gap: 8px; }
+.signup-row input { flex: 1; border: 1.5px solid var(--paper); border-radius: 10px; padding: 9px 12px; font-size: 14px; outline: none; }
+.signup-row input:focus { border-color: var(--blue); }
+.btn.small { width: auto; padding: 9px 14px; }
+.spot.judge .brow { stroke: #2B2F36; stroke-width: 1.8; stroke-linecap: round; transition: transform .25s ease-out; transform-box: fill-box; transform-origin: center; }
+.spot.judge.eyebrow .brow.r { transform: translateY(-4px) rotate(-24deg); }
+.spot.judge.eyebrow .figure svg { opacity: 1; }
 .composer { display: flex; gap: 10px; padding: 12px 14px 14px; border-top: 1px solid var(--line); }
 .composer input { flex: 1; border: 1.5px solid var(--paper); border-radius: 12px; padding: 11px 14px; font-size: 15px; outline: none; background: var(--white); }
 .composer input:focus { border-color: var(--blue); }

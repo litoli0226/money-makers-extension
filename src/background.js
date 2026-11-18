@@ -6,6 +6,12 @@
 // in src/flow.js decide what happens next. The model only scores and writes.
 //
 // Providers: OpenRouter (any model) or Anthropic directly (Claude).
+//
+// Branch guest-trial-mvp adds the MVP stages (mvp_*) below. Same pattern: one
+// JSON reply per stage, rules in src/flow.js decide what happens next, except
+// the verdict when Settings -> "C2: who picks the verdict" is set to the model.
+
+importScripts("/src/prices.js", "/src/findings.js");
 
 const DEFAULTS = {
   openrouter: "anthropic/claude-haiku-5.5",
@@ -63,6 +69,77 @@ Write questions the way a person would say them out loud: short, plain and speci
   },
 };
 
+
+// ---------- Guest-trial MVP stages ----------
+
+const MVP_STAGES = {
+  mvp_item: {
+    who: "judge",
+    task: `Stage: mvp_item. The defendant just gave their title; call them by "defendant_name".
+Write "line": one sentence that names the defendant, the item (item.short) and its price.
+Write "price_line": one short line about the price, built from "price_match" in the case file.
+- If price_match.kind is "table": say the price is about that many of price_match.row.thing (or about half of it if price_match.half is true). Use the word "about". Use no other prices.
+- If price_match.kind is "anecdote": tell a one-line made-up story about your own past in the spirit of price_match.template (for example buying Apple stock back in the day). Never claim a real price for anything else. This one story about yourself is allowed even though you never invent facts, prices or statistics anywhere else.
+Write "question": ask how the item will make their life better. Ask how, not why.`,
+    schema: { line: "string", price_line: "string", question: "string" },
+  },
+  mvp_how: {
+    who: "judge",
+    task: `Stage: mvp_how. The defendant just answered your "how" question ("answer" in the case file).
+Set "kind":
+- "mechanism": they say how the item will be used: when, where, how often, a plan or a setup ("I'll wear them every night and set up a sleep playlist").
+- "reason": they say why they want it, without how ("I need these, my roommate is loud", "it's on sale", "I deserve it").
+- "unclear": too short or off-topic to tell.
+Score "strength", "engaged", "unsure" and "claim" exactly as in the answer stage rubric: strength is strong, good, neutral, weak or impulse; claim is need, usage, price, learn, gift, treat, want or vague. A mechanism with specifics counts as strong or good.
+If "objection_allowed" is true and kind is not "mechanism": write "objection": tell them you asked how, not why, in one sentence (for example "Not why, defendant. I asked how."), then ask once more, plainly, for when and where they'll use it. Leave "acknowledge" empty.
+Otherwise: write "acknowledge": one short sentence reacting to the answer, without repeating it back. Leave "objection" empty.`,
+    schema: {
+      kind: ["mechanism", "reason", "unclear"],
+      strength: ["strong", "good", "neutral", "weak", "impulse"],
+      engaged: "boolean",
+      unsure: "boolean",
+      claim: ["need", "usage", "price", "learn", "gift", "treat", "want", "vague"],
+      acknowledge: "string",
+      objection: "string",
+    },
+  },
+  mvp_witness: {
+    who: "witness",
+    task: `Stage: witness. You are the expert witness named in "witness.name". Give your testimony in "says": two or three sentences with one useful perspective on this case. No questions.
+If "witness.id" is "research": quote one finding from "findings" in the case file, in plain words, and set "finding_id" to its id. You may add one sentence from your own knowledge, worded as "research suggests", with no numbers.
+Otherwise set "finding_id" to "none" and follow your role (simple arithmetic from the case file is fine).`,
+    schema: { says: "string", finding_id: "string" },
+  },
+  mvp_respond: {
+    who: "judge",
+    task: `Stage: mvp_respond. The defendant just responded to the expert witness ("answer" in the case file).
+Score "strength", "engaged", "unsure" and "claim" as in the answer stage rubric.
+Write "acknowledge": one short sentence, then say the court will now deliberate.`,
+    schema: {
+      strength: ["strong", "good", "neutral", "weak", "impulse"],
+      engaged: "boolean",
+      unsure: "boolean",
+      claim: ["need", "usage", "price", "learn", "gift", "treat", "want", "vague"],
+      acknowledge: "string",
+    },
+  },
+  gift_check: {
+    who: "judge",
+    task: `Stage: gift_check. The defendant mentioned a gift. Write "question": one or two sentences that say a gift changes the verdict, and ask them to confirm. Two buttons will appear under it: "It's a gift" and "It's not a gift".`,
+    schema: { question: "string" },
+  },
+  mvp_verdict: {
+    who: "judge",
+    task: `Stage: mvp_verdict. Write "reason": one line explaining the ruling, drawn from what the defendant said. When the case held up, quote a few words of their "how" (the plan for using it), not their reason for wanting it.
+If "verdict_by" is "rule", the ruling is already in "verdict" (approve, sleep or denied); never contradict it.
+If "verdict_by" is "model", pick "verdict" yourself: "approve" when they gave a concrete plan for using it, "denied" when it was clearly an impulse, "sleep" otherwise. When unsure, pick "sleep".
+Write "signup": one sentence inviting them to sign up, starting "Sign up, and", tied to this case (for a gift: keeping track of their gifts; for sleep: a reminder about the item).`,
+    schema: { verdict: ["approve", "sleep", "denied"], reason: "string", signup: "string" },
+  },
+};
+Object.assign(STAGES, MVP_STAGES);
+STAGES.mvp_respond_q = STAGES.after_witness; // same job: thank the witness, ask the defendant to respond
+
 // Turn the shorthand above into a JSON schema.
 function jsonSchema(shape) {
   const properties = {};
@@ -82,9 +159,9 @@ async function readFile(path) {
   }
   return files[path];
 }
-async function personality(who) {
+async function personality(who, format) {
   const brief = await readFile(`personality/${who}.md`);
-  const examples = await readFile("personality/example-trials.md");
+  const examples = await readFile(format === "mvp" ? "personality/example-trials-mvp.md" : "personality/example-trials.md");
   if (!examples.trim()) return brief;
   return `${brief}
 
@@ -109,6 +186,8 @@ async function callOpenRouter(settings, system, schema, caseFile) {
     body: JSON.stringify({
       model: settings.openrouterModel || DEFAULTS.openrouter,
       max_tokens: 1500,
+      // MVP switch R11/R16: lower = steadier. Empty in Settings = the provider's default.
+      ...(settings.temperature !== undefined && settings.temperature !== "" ? { temperature: Number(settings.temperature) } : {}),
       messages: [
         { role: "system", content: system },
         { role: "user", content: JSON.stringify(caseFile, null, 2) },
@@ -150,13 +229,16 @@ async function courtTurn({ stage, ctx }) {
   const spec = STAGES[stage];
   if (!spec) throw new Error(`Unknown stage ${stage}`);
   const { settings = {} } = await chrome.storage.local.get("settings");
-  const system = `${await personality(spec.who)}\n\n---\n\n${CASE_FILE_NOTE}\n\n${spec.task}`;
+  const format = stage.startsWith("mvp_") || stage === "gift_check" ? "mvp" : "classic";
+  const system = `${await personality(spec.who, format)}\n\n---\n\n${CASE_FILE_NOTE}\n\n${spec.task}`;
   const caseFile = {
     stage,
     today: new Date().toDateString(),
     local_time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
     ...ctx,
   };
+  if (stage === "mvp_item") caseFile.price_match = globalThis.gicPrices.comparePrice(ctx.item?.total, (ctx.item?.label || "").length);
+  if (stage === "mvp_witness") caseFile.findings = globalThis.gicFindings.FINDINGS.map(({ id, line, cite }) => ({ id, line, cite }));
   const schema = jsonSchema(spec.schema);
   const call = settings.mode === "anthropic" ? callAnthropic : callOpenRouter;
   const text = await call(settings, system, schema, caseFile);

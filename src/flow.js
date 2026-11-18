@@ -76,5 +76,59 @@
     return WITNESSES.future;
   }
 
-  globalThis.gicFlow = { RULES, STRENGTH, MOMENTS, WITNESSES, score, next, verdict, pickWitness };
+  // ---------- Guest-trial MVP (branch guest-trial-mvp) ----------
+  //
+  // The team's MVP rules (see "Money Makers: rules the judge runs on (MVP)").
+  // A fixed spine, no recess, no extra rounds:
+  //   1 name (fixed copy, title picker)        R6, C1 option (a)
+  //   2 item + price line + "how" question     R6, R11
+  //   3 objection, only after a reason, once   R7
+  //   4 witness, every trial                   R6
+  //   5 defendant responds to the witness      R6 (skipped after an objection if C1 (b) is on)
+  //   6 deliberate                             R6
+  //   7 verdict + sign-up                      R6, R15
+  // Switches for the open conflicts live in Settings -> Court settings -> MVP test switches.
+
+  const MVP = {
+    objections: 1, // R7: the judge asks again once, then moves on whatever the answer
+    approveAt: 2, // R15/C2 (rule): total +2 or more -> approve
+    deniedAt: -2, // total -2 or less -> denied; anything between -> sleep on it
+    giftBonus: 2, // "If this is a gift, that changes the verdict": a confirmed gift adds 2 points
+  };
+
+  // Which step comes after the latest "how" answer.
+  // state.objected: the judge already objected once
+  // kind: "mechanism" | "reason" | "unclear" for the latest answer
+  function mvpAfterHow(state, kind) {
+    if (kind !== "mechanism" && (state.objected || 0) < MVP.objections) return "object";
+    return "witness";
+  }
+
+  // C1 option (b): skip "respond to the witness" when the judge objected.
+  const mvpAskRespond = (state, settings) => !(settings.c1SkipRespond === "on" && state.objected);
+
+  // "approve" | "sleep" | "denied"
+  function mvpVerdict(state) {
+    const s = score(state) + (state.gift === true ? MVP.giftBonus : 0);
+    if (s >= MVP.approveAt) return "approve";
+    if (s <= MVP.deniedAt) return "denied";
+    return "sleep";
+  }
+
+  // Same three expert roles as the classic court, plus a researcher who may only
+  // quote the team's findings list (R13). Gift and want/treat arguments get the researcher.
+  const MVP_WITNESSES = {
+    ...WITNESSES,
+    research: { id: "research", name: "Research witness", role: "Expert witness · quotes published studies" },
+  };
+  function mvpPickWitness(state) {
+    const claims = state.answers.map((a) => a.claim);
+    if (claims.some((c) => c === "gift" || c === "want" || c === "treat")) return MVP_WITNESSES.research;
+    return pickWitness(state);
+  }
+
+  globalThis.gicFlow = {
+    RULES, STRENGTH, MOMENTS, WITNESSES, score, next, verdict, pickWitness,
+    MVP, MVP_WITNESSES, mvpAfterHow, mvpAskRespond, mvpVerdict, mvpPickWitness,
+  };
 })();

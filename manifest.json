@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Guilty If Charged",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A quick check, and a friendly courtroom if you want it, right before you check out.",
   "permissions": ["storage"],
   "host_permissions": [
@@ -16,7 +16,7 @@
   "content_scripts": [
     {
       "matches": ["https://www.amazon.com/*", "https://www.amazon.ca/*", "http://localhost/*"],
-      "js": ["src/flow.js", "src/script.js", "src/content.js"],
+      "js": ["src/flow.js", "src/prices.js", "src/findings.js", "src/script.js", "src/content.js"],
       "run_at": "document_idle"
     }
   ],

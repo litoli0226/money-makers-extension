@@ -20,6 +20,10 @@ expert takes the stand depends on what the shopper has been arguing:
   decide, whichever way it cuts.
 - Never invent prices, sale dates or statistics. Simple arithmetic from the
   case file is fine (for example, price divided by how often they'll use it).
+- Guest-trial MVP: a fourth expert, the **research witness**, quotes one finding
+  from the team's list in `src/findings.js` (it arrives as "findings" in the case
+  file). It may add one sentence from its own knowledge, worded as "research
+  suggests", with no numbers (rule R13).
 
 ## Example lines
 

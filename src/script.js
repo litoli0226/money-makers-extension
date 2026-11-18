@@ -126,7 +126,7 @@
       .replace(/\s*\(.*?\)\s*/g, " ")
       .split(/\s+/)
       .filter((w) => w && !/^\d+(\.\d+)?(mg|ml|oz|g|kg|ct|pack|count|p|w|in|ft)?$/i.test(w));
-    return words.slice(0, 4).join(" ") || label.slice(0, 30);
+    return words.slice(0, 4).join(" ").replace(/\s+(&|and|\+|-|of|with)$/i, "") || label.slice(0, 30);
   }
 
   function money(n, cur) {
@@ -203,4 +203,139 @@
 
   globalThis.gicShortName = shortName;
   globalThis.gicMoney = money;
+
+  // =====================================================================
+  // Guest-trial MVP court (branch guest-trial-mvp). Same idea as above:
+  // canned lines, filled in from the page. Writers (Oli): every MVP line is in
+  // MVP_LINES below.
+  //
+  //   mvp_item     -> { line, price_line, question }
+  //   mvp_how      -> { kind, acknowledge, objection?, strength, engaged, unsure, claim }
+  //   witness      -> { says, cite?, url? }
+  //   mvp_respond_q-> { question }
+  //   mvp_respond  -> { acknowledge, strength, engaged, unsure, claim }
+  //   gift_check   -> { question }
+  //   mvp_verdict  -> { reason, signup }
+  // =====================================================================
+
+  const MVP_LINES = {
+    name: "Forgive me, what's your name, defendant?",
+    item: (f) => `${f.defendant}, the court has your case: ${f.the}, for ${f.price}.`,
+    how: (f) => `And how will ${f.it} make your life better, defendant?`,
+    howPlaceholder: "How, exactly: when, where, how often you'll use it",
+    objection: "Not why, defendant. I asked how.",
+    objectionAgain: "Walk the court through it: when and where will you use it?",
+    acknowledge: {
+      mechanism: () => "A plan, not just a wish. Noted for the record.",
+      reason: () => "The court has heard why. It will have to do.",
+      unclear: () => "The court will take that as it is.",
+    },
+    callWitness: "I now call an expert witness to the stand.",
+    respondQ: {
+      research: () => "Ah, but that must be different for you, right, defendant?",
+      price: () => "Defendant, could you wait two weeks and see if the price holds?",
+      usage: () => "Defendant, how often will you really use it? The witness is watching.",
+      future: () => "Defendant, anything you'd like to say to your future self?",
+    },
+    respondAck: () => "So noted. The court will now deliberate.",
+    giftCheck: (f) => `Mmm... ${f.defendant} buys for the other Moneybags. If this is a gift, that changes the verdict.`,
+    reason: {
+      approve: (f) => `${f.bestQuote ? `You said "${f.bestQuote}" and backed it up.` : "You made your case and backed it up."} Case approved.`,
+      sleep: (f) => `Your case has a point, but not a finished one. Sleep on it: ${f.the} will still be here tomorrow.`,
+      denied: (f) => `Your case sounded more like a want than a need right now. That's ${f.price} you keep.`,
+    },
+    signup: {
+      gift: () => "Sign up, and I'll help you keep track of your gifts.",
+      approve: () => "Sign up, and the court will keep a record of your wins.",
+      sleep: (f) => `Sign up, and I'll remind you about ${f.the} in a week.`,
+      denied: () => "Sign up, and I'll show you what you've kept.",
+    },
+  };
+
+  // Reason or mechanism? (R7) A mechanism says how the item gets used: a plan,
+  // a time, a frequency, a setup. A reason says why it's wanted. Keyword-based in
+  // scripted mode; the AI judge classifies it itself in live mode. Also used for
+  // the optional live hint under the text box.
+  const MECH = /\b(i'll|i will|i would|i'd|i plan to|i'm going to|every (day|night|morning|evening|week|weekend)|each (day|night|week)|daily|nightly|weekly|whenever|when i|before (bed|work|class|school)|after (work|class|school)|while i|times a (day|week|month)|on my (commute|way)|set (it |them )?up|plug|wear (it|them)|use (it|them) (to|for|on|at|in|every|when|while))\b/i;
+  function howKind(text) {
+    const t = String(text || "").trim();
+    const words = t.split(/\s+/).filter(Boolean).length;
+    if (words < 4) return "unclear";
+    return MECH.test(t) && words >= 6 ? "mechanism" : "reason";
+  }
+
+  function mvpFacts(ctx) {
+    const f = facts(ctx);
+    const t = ctx.title ? `${ctx.title} Moneybags` : "Moneybags";
+    return { ...f, defendant: t, the: f.the === "the " ? "this item" : f.the, it: f.it === "the " ? "this item" : f.it };
+  }
+
+  function scoreHow(text, kind) {
+    const e = evaluate(text);
+    // R7: how counts more than why. A mechanism counts one step stronger, a
+    // reason one step weaker (both capped).
+    if (kind === "mechanism" && e.engaged) {
+      const up = { impulse: "weak", weak: "neutral", neutral: "good", good: "strong", strong: "strong" };
+      e.strength = up[e.strength];
+    }
+    if (kind === "reason" && e.engaged) {
+      const down = { strong: "good", good: "neutral", neutral: "weak", weak: "impulse", impulse: "impulse" };
+      e.strength = down[e.strength];
+    }
+    return e;
+  }
+
+  globalThis.gicHowKind = howKind;
+  globalThis.gicMvpLines = MVP_LINES;
+
+  globalThis.gicScriptedMvp = function (stage, ctx) {
+    const f = mvpFacts(ctx);
+    switch (stage) {
+      case "mvp_item": {
+        const seed = (ctx.item.label || "").length;
+        return {
+          line: MVP_LINES.item(f),
+          price_line: globalThis.gicPrices?.priceLine(ctx.item.total, f.price, seed) || "",
+          question: MVP_LINES.how(f),
+        };
+      }
+      case "mvp_how": {
+        const kind = howKind(ctx.answer);
+        const e = scoreHow(ctx.answer, kind);
+        if (ctx.objection_allowed && kind !== "mechanism") {
+          return { kind, ...e, acknowledge: "", objection: `${MVP_LINES.objection} ${MVP_LINES.objectionAgain}` };
+        }
+        return { kind, ...e, acknowledge: MVP_LINES.acknowledge[kind](f) };
+      }
+      case "witness":
+      case "mvp_witness": {
+        if (ctx.witness.id === "research") {
+          const claims = (ctx.answers || []).map((a) => a.claim);
+          const fd = globalThis.gicFindings.findingFor(claims.find((c) => c !== "vague") || "vague");
+          return { says: `Research witness, under oath. ${fd.line}`, cite: fd.cite, url: fd.url };
+        }
+        return { says: LINES.witness[ctx.witness.id](f) };
+      }
+      case "mvp_respond_q":
+        return { question: (MVP_LINES.respondQ[ctx.witness.id] || MVP_LINES.respondQ.future)(f) };
+      case "mvp_respond": {
+        const e = evaluate(ctx.answer);
+        return { ...e, acknowledge: MVP_LINES.respondAck(f) };
+      }
+      case "gift_check":
+        return { question: MVP_LINES.giftCheck(f) };
+      case "mvp_verdict": {
+        // Quote the defendant's "how" when there is one, not their "why".
+        const mech = (ctx.answers || []).filter((a) => a.kind === "mechanism");
+        const f2 = facts({ ...ctx, answers: mech.length ? mech : ctx.answers || [] });
+        const v = ctx.verdict;
+        const gift = ctx.gift === true || (ctx.gift == null && (ctx.answers || []).some((a) => a.claim === "gift"));
+        return {
+          reason: MVP_LINES.reason[v]({ ...f, bestQuote: f2.bestQuote }),
+          signup: gift ? MVP_LINES.signup.gift(f) : MVP_LINES.signup[v](f),
+        };
+      }
+    }
+    throw new Error(`Unknown MVP stage ${stage}`);
+  };
 })();
