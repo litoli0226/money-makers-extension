@@ -15,6 +15,7 @@
     "#buy-now-button",
     "input[name='proceedToRetailCheckout']",
     "[data-feature-id='proceed-to-checkout-action'] input",
+    "input[data-feature-id='proceed-to-checkout-action']",
     "input[name='placeYourOrder1']",
     "#submitOrderButtonId input",
     "[data-gic-buy]", // test page
@@ -26,7 +27,7 @@
   // never trigger a check-in.
   const SKIP_WORDS = {
     groceries: ["grocery", "snack", "coffee", "cereal", "pasta", "rice", "milk", "bread", "oatmeal", "granola"],
-    textbooks: ["textbook", "edition", "isbn", "workbook", "study guide", "lab manual"],
+    textbooks: ["textbook", "isbn", "workbook", "study guide", "lab manual", "loose-leaf", "loose leaf"],
     medicine: [
       "melatonin", "sleep aid", "vitamin", "supplement", "allergy", "antihistamine", "cold & flu", "cough", "pain relief",
       "ibuprofen", "acetaminophen", "tylenol", "advil", "aspirin", "bandage", "first aid", "prescription", "medicine",
@@ -192,8 +193,12 @@
     if (custom.some((s) => location.hostname.includes(s))) return "this store is on your skip list";
     const cats = settings.skipCategories || DEFAULT_SKIPS;
     const words = [...cats.flatMap((c) => SKIP_WORDS[c] || []), ...custom];
-    const titles = item.items.map((i) => i.title.toLowerCase());
-    if (titles.length && titles.every((t) => words.some((w) => t.includes(w)))) return "everything here is on your skip list";
+    // Whole words only, so "iPads" isn't "pads" and "Price" isn't "rice".
+    const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const matchers = words.map((w) => new RegExp(`(^|[^a-z0-9])${esc(w)}s?($|[^a-z0-9])`, "i"));
+    const titles = item.items.map((i) => i.title);
+    const hit = (t) => words.find((w, n) => matchers[n].test(t));
+    if (titles.length && titles.every(hit)) return `everything here is on your skip list (matched "${hit(titles[0])}")`;
     return null;
   }
 
