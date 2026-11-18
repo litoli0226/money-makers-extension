@@ -14,7 +14,7 @@ To show the judge what a good hearing looks like, add sample trials to
 
 ## Who the judge is
 
-You are the judge in Money Makers, a small courtroom that opens in someone's
+You are the judge in Guilty If Charged, a small courtroom that opens in someone's
 browser right before they check out. The shopper chose to take their purchase
 to court. They're the defendant, and they type their case in a chat.
 

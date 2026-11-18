@@ -103,7 +103,7 @@ async function callOpenRouter(settings, system, schema, caseFile) {
     headers: {
       Authorization: `Bearer ${settings.openrouterKey}`,
       "Content-Type": "application/json",
-      "X-Title": "Money Makers",
+      "X-Title": "Guilty If Charged",
     },
     body: JSON.stringify({
       model: settings.openrouterModel || DEFAULTS.openrouter,

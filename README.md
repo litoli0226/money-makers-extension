@@ -1,6 +1,6 @@
-# Money Makers
+# Guilty If Charged
 
-Chrome extension prototype for our Persuasive Design project. When you click a checkout button on Amazon (Buy Now, Proceed to checkout, Place your order), a **quick check** asks if you really need it. Save it, close it and carry on, or say "Yes, I want it" and make your case to **the judge** in a short courtroom chat. The verdict is advice. You always decide.
+Chrome extension prototype for our Persuasive Design project (team Money Makers). When you click a checkout button on Amazon (Buy Now, Proceed to checkout, Place your order), a **quick check** asks if you really need it. Save it, close it and carry on, or say "Yes, I want it" and make your case to **the judge** in a short courtroom chat. The verdict is advice. You always decide.
 
 Screens follow the team's Figma file (Low-Mid-Fi Wireframes Iteration 2, "Hi-fi prototype"): quick check, saved pop-up, courtroom rounds, deliberating, verdicts, totally okay, home window and settings.
 

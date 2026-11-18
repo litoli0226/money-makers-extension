@@ -404,7 +404,7 @@
           ? ""
           : `<button class="card row-link" data-act="goal">${ICON.flag}<span><b>Give your savings a goal</b><small>A trip, a laptop, a safety net. Every dollar you skip counts toward it.</small></span>${ICON.arrow}</button>`
       }
-      <div class="card wish"><span class="thumb"></span><span>${esc(short)} is on your Money Makers wishlist.${by ? ` Revisit it after ${esc(by)}.` : ""}</span></div>
+      <div class="card wish"><span class="thumb"></span><span>${esc(short)} is on your Guilty If Charged wishlist.${by ? ` Revisit it after ${esc(by)}.` : ""}</span></div>
       <button class="btn primary" data-act="done">Done</button>`;
     if (style === "panel") showPanel(html);
     else showPage(`<div class="card-lg">${html}</div>`, "centered");
