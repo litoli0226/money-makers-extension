@@ -494,6 +494,21 @@
     showPage(`
       <div class="topbar"><span id="round"></span><button class="chip-btn" data-act="leave">Leave trial ${ICON.x}</button></div>
       <div class="court-stage">
+        <div class="scene" id="scene" aria-hidden="true">
+          <div class="seal-wall">${ICON.scale}</div>
+          <div class="spot witness" data-who="witness">
+            <div class="figure">${FIGURE.witness}<span class="speech"><i></i><i></i><i></i></span></div>
+            <div class="stand"><span class="plate">Witness stand</span></div>
+          </div>
+          <div class="spot judge" data-who="judge">
+            <div class="figure">${FIGURE.judge}<span class="speech"><i></i><i></i><i></i></span></div>
+            <div class="bench"><span class="plate">The judge</span></div>
+          </div>
+          <div class="spot defendant" data-who="defendant">
+            <div class="figure">${FIGURE.defendant}<span class="speech"><i></i><i></i><i></i></span></div>
+            <div class="table"><span class="plate">You</span></div>
+          </div>
+        </div>
         <div class="chat" role="log" aria-label="Courtroom">
           <div class="chat-head"><span class="av judge">${ICON.scale}</span><span><b>The judge</b><small>Hearing your case for ${item.items.length > 1 ? "this cart" : `the ${esc(short)}`}</small></span></div>
           <div class="log" id="log" aria-live="polite"></div>
@@ -522,8 +537,17 @@
     });
 
     const scroll = () => (logEl.scrollTop = logEl.scrollHeight);
+    // Courtroom scene: whoever is talking stands up and gets the highlight.
+    const scene = $("#scene");
+    function setSpeaker(who, thinking = false) {
+      for (const spot of scene.querySelectorAll(".spot")) {
+        spot.classList.toggle("talking", spot.dataset.who === who);
+        spot.classList.toggle("thinking", thinking && spot.dataset.who === who);
+      }
+    }
     function say(role, text, opts = {}) {
       transcript.push({ role, text });
+      setSpeaker(role);
       const row = document.createElement("div");
       if (role === "defendant") {
         row.className = "msg me";
@@ -547,6 +571,7 @@
       scroll();
     }
     function typing(who = "judge") {
+      setSpeaker(who, true);
       const row = document.createElement("div");
       row.className = `msg ${who} typing`;
       row.innerHTML = `<span class="av ${who === "witness" ? "gold" : "judge"}">${who === "witness" ? ICON.witness : ICON.scale}</span><div class="bubble"><i></i><i></i><i></i></div>`;
@@ -591,6 +616,7 @@
     openInput();
 
     input.addEventListener("keydown", (e) => e.stopPropagation()); // keep the store's shortcuts out of it
+    input.addEventListener("input", () => input.value && setSpeaker("defendant", true));
     $("#composer").onsubmit = async (e) => {
       e.preventDefault();
       const answer = input.value.trim();
@@ -617,6 +643,9 @@
         moment(step.moment);
         state.witnessCalled = true;
         state.witness = flow.pickWitness(state);
+        const stand = scene.querySelector(".spot.witness");
+        stand.classList.add("called");
+        stand.querySelector(".plate").textContent = state.witness.name;
         await wait(600);
         const w = await ask("witness", { witness: state.witness }, "witness");
         say("witness", w.says);
@@ -785,6 +814,18 @@
     witness: svg('<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/><path d="M15.5 14.8l1 2.2 2.3.3-1.7 1.6.4 2.3-2-1.1"/>'),
   };
 
+  // Flat courtroom figures in the design-system palette.
+  const person = (body, extra = "", hair = "") =>
+    `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M10 64c0-14 9.5-22 22-22s22 8 22 22z" fill="${body}"/>${extra}<circle cx="32" cy="25" r="12" fill="#EAD7C3"/><circle cx="27.5" cy="25" r="1.4" fill="#2B2F36"/><circle cx="36.5" cy="25" r="1.4" fill="#2B2F36"/><path d="M28.5 30q3.5 2.6 7 0" fill="none" stroke="#2B2F36" stroke-width="1.4" stroke-linecap="round"/>${hair}</svg>`;
+  const FIGURE = {
+    // judge: robe, white collar, grey judicial wig
+    judge: person("#2B2F36", '<path d="M26 42l6 9 6-9z" fill="#FFFFFF"/>', '<path d="M19 24c-1-10 5-15 13-15s14 5 13 15c-2-5-7-8-13-8s-11 3-13 8z" fill="#C6CCD3"/><circle cx="19.5" cy="27" r="3" fill="#C6CCD3"/><circle cx="44.5" cy="27" r="3" fill="#C6CCD3"/>'),
+    // witness: gold jacket, glasses
+    witness: person("#C19F7C", '<path d="M28 42l4 6 4-6z" fill="#F3ECE4"/>', '<path d="M21 20c1-7 6-10 11-10s10 3 11 10c-3-3-7-4-11-4s-8 1-11 4z" fill="#7A5A3A"/><circle cx="27.5" cy="25" r="3.2" fill="none" stroke="#2B2F36" stroke-width="1.2"/><circle cx="36.5" cy="25" r="3.2" fill="none" stroke="#2B2F36" stroke-width="1.2"/><path d="M30.7 25h2.6" stroke="#2B2F36" stroke-width="1.2"/>'),
+    // you: ribbon-blue hoodie
+    defendant: person("#224786", "", '<path d="M20 22c0-8 5-12 12-12s12 4 12 12c-2-2-6-3-12-3s-10 1-12 3z" fill="#62666F"/>'),
+  };
+
   const CONFETTI = [
     [8, 22, -20, "#224786"], [20, 6, 15, "#99B4A3"], [34, 30, 40, "#C19F7C"], [62, 10, -35, "#224786"],
     [76, 28, 25, "#99B4A3"], [88, 8, -10, "#C6CCD3"], [92, 34, 50, "#C19F7C"], [14, 44, 30, "#C6CCD3"],
@@ -923,8 +964,43 @@ label input:focus { border-color: var(--blue); }
 .chip-btn svg { width: 14px; height: 14px; }
 .chip-btn:hover { border-color: var(--seal); }
 .court-stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 8px 16px 28px; }
+/* courtroom scene above the chat */
+.scene {
+  position: relative; width: 660px; max-width: 100%; height: 150px; flex: none; overflow: hidden;
+  background: linear-gradient(var(--white) 0 74%, var(--line) 74% 75%, var(--bill) 75%);
+  border: 1px solid var(--line); border-radius: 20px;
+  display: grid; grid-template-columns: 1fr 1.3fr 1fr; align-items: end; padding: 0 28px;
+}
+.seal-wall { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--blue-tint); color: var(--blue); }
+.seal-wall svg { width: 16px; height: 16px; }
+.spot { display: flex; flex-direction: column; align-items: center; }
+.spot .figure svg { opacity: .55; transition: opacity .25s; }
+.spot.talking .figure svg { opacity: 1; }
+.figure { position: relative; width: 52px; height: 52px; margin-bottom: -6px; transition: transform .25s ease-out; }
+.figure svg { width: 52px; height: 52px; }
+.spot.judge .figure { width: 60px; height: 60px; }
+.spot.judge .figure svg { width: 60px; height: 60px; }
+.spot.talking .figure { transform: translateY(-5px); }
+.bench, .stand, .table { position: relative; display: grid; place-items: center; border-radius: 8px 8px 0 0; }
+.bench { width: 190px; height: 52px; background: var(--ink); }
+.stand { width: 104px; height: 40px; background: var(--white); border: 1.5px dashed var(--paper); border-bottom: 0; }
+.table { width: 120px; height: 34px; background: var(--paper); }
+.plate { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: var(--white); color: var(--seal); white-space: nowrap; transition: background .2s, color .2s; }
+.bench .plate { background: rgba(255,255,255,.12); color: var(--white); }
+.spot.talking .plate { background: var(--blue); color: var(--white); }
+.spot.witness.talking .plate { background: var(--gold-deep); }
+/* the witness stand is empty until someone is called */
+.spot.witness .figure { opacity: 0; transform: translateY(14px); transition: opacity .35s, transform .35s ease-out; }
+.spot.witness.called .figure { opacity: 1; transform: none; }
+.spot.witness.called.talking .figure { transform: translateY(-5px); }
+.spot.witness.called .stand { background: var(--gold-tint); border: 0; }
+.speech { position: absolute; top: -6px; right: -10px; display: none; gap: 3px; padding: 5px 7px; background: var(--white); border: 1px solid var(--line); border-radius: 10px 10px 10px 2px; }
+.speech i { width: 4px; height: 4px; border-radius: 50%; background: var(--slate); animation: blink 1s infinite; }
+.speech i:nth-child(2) { animation-delay: .15s; }
+.speech i:nth-child(3) { animation-delay: .3s; }
+.spot.thinking .speech { display: flex; }
 .chat {
-  width: 660px; max-width: 100%; height: min(600px, calc(100vh - 130px)); display: flex; flex-direction: column;
+  width: 660px; max-width: 100%; height: min(470px, calc(100vh - 290px)); min-height: 300px; display: flex; flex-direction: column;
   background: var(--white); border: 1px solid var(--line); border-radius: 20px; overflow: hidden;
 }
 .chat-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
@@ -963,6 +1039,8 @@ label input:focus { border-color: var(--blue); }
 @keyframes blink { 50% { opacity: .3; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { *, *::after { animation: none !important; transition: none !important; } }
+@media (max-width: 520px) { .scene { padding: 0 8px; height: 130px; } .bench { width: 120px; } .stand, .table { width: 84px; } }
+@media (max-height: 620px) { .scene { display: none; } }
 @media (max-width: 520px) { .msg { max-width: 90%; } .h1 { font-size: 26px; } }
 `;
   }
