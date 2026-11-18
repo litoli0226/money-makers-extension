@@ -12,7 +12,7 @@ const DEFAULTS = {
   anthropic: "claude-haiku-5-5",
 };
 
-const CASE_FILE_NOTE = `You'll get a case file as JSON: the item, the shopper's profile (goal and savings, if any), the transcript so far and stage details. Only use numbers that appear in the case file. Never invent prices, sale dates or statistics. Reply with only the JSON object.`;
+const CASE_FILE_NOTE = `You'll get a case file as JSON: the item, the shopper's profile (goal and savings, if any), the transcript so far and stage details. Only use numbers that appear in the case file. Never invent prices, sale dates or statistics. If "profile.goal" is null the shopper has no goal: say "your savings", and never make up a goal or call it a "general savings goal". Refer to the item by "item.short", not its full store title. Reply with only the JSON object.`;
 
 const STAGES = {
   open: {
@@ -33,7 +33,8 @@ Score the answer in "strength":
 Set "engaged" to false if the answer is under three words, "idk", off-topic, or a joke with no reason in it. Otherwise true.
 Set "unsure" to true if the answer shows confusion or debate ("maybe", "still thinking", "I guess", "trying", "not sure"). Otherwise false.
 Set "claim" to the main kind of argument: need, usage, price, learn, gift, treat, want or vague.
-Write "question": the question for round "next_round". Push on the weakest part of their case so far. Never repeat an earlier question. If "next_round" equals "rounds_planned", start it with "Last question."`,
+Write "question": the question for round "next_round". Push on the weakest part of their case so far. Never repeat an earlier question. If "next_round" equals "rounds_planned", start it with "Last question."
+Write questions the way a person would say them out loud: short, plain and specific to this item. Good: "Would you rather have the earbuds, or $48 more toward Spring break?" Avoid stiff phrasing like "Is it worth more to you right now than $48 toward your goal?"`,
     schema: {
       acknowledge: "string",
       strength: ["strong", "good", "neutral", "weak", "impulse"],

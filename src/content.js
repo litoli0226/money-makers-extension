@@ -686,13 +686,16 @@
         <ul class="checks">${steps.map(([t, s]) => `<li><span class="tick"></span><span><b>${esc(t)}</b>${s ? `<small>${esc(s)}</small>` : ""}</span></li>`).join("")}</ul>
       </div>`, "centered");
     const reasonP = courtTurn("verdict", ctx({ verdict }), settings);
+    // Paced so each check reads as real work: about 1.5s per step, then a beat.
     const items = [...layer.querySelectorAll(".checks li")];
     for (const li of items) {
       li.classList.add("active");
-      await wait(700);
+      await wait(1500);
       li.classList.replace("active", "done");
+      await wait(250);
     }
     const { reason } = await reasonP;
+    await wait(700);
     transcript.push({ role: "judge", text: reason });
     showVerdict(item, settings, history, profile, verdict, reason, transcript);
   }
@@ -718,12 +721,12 @@
     $("[data-act=primary]").focus();
     const record = { where: "courtroom", verdict, transcript };
 
-    // Flow step 6 -> 7: saving goes to the saved screen, buying always passes
-    // through "Totally okay, you thought it through" before the order continues.
+    // Approved: straight back to checkout. "Totally okay, you thought it
+    // through" is only for appealing a "Save it" ruling and buying anyway.
     on("[data-act=primary]", async () => {
       if (verdict === "save") return saveIt(item, settings, history, "courtroom", "page", transcript);
       await logOutcome(item, "approved", record);
-      showTotallyOkay(profile);
+      proceedWithPurchase();
     });
     on("[data-act=secondary]", async () => {
       if (verdict === "approve") return saveIt(item, settings, history, "courtroom", "page", transcript);

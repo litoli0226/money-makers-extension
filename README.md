@@ -30,7 +30,8 @@ Follows the "User flow map" and "Update user Flow" diagrams in the team's Figma.
 5. **The judge's verdict.** Either "Save it" or "Go for it", with a one-line reason drawn from your answers.
 6. **You decide.** The verdict is advice.
    - Saving moves the money to your goal and the item to your wishlist.
-   - Buying goes through "Totally okay, you thought it through", then the order continues.
+   - "Go for it": straight back to checkout.
+   - Appealing a "Save it" ruling and buying anyway: goes through "Totally okay, you thought it through", then the order continues. (The Figma flow shows this for every purchase. The team chose to skip it after an approval.)
 
 ## How a trial works
 

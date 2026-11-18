@@ -76,7 +76,7 @@
         treat: "Is there a cheaper treat that would hit the same spot?",
       })[f.lastClaim] || `Will you use ${f.it} in the next 30 days? Convince me.`,
     3: () => "Could you get by with something cheaper, or wait two weeks?",
-    4: (f) => (f.goal ? `Last question. Is it worth more to you than ${f.price} toward ${f.goal}?` : "Last question. If it cost twice as much, would you still want it?"),
+    4: (f) => (f.goal ? `Last question. Would you rather have ${f.it}, or ${f.price} more toward ${f.goal}?` : `Last question. Would you rather have ${f.it}, or ${f.price} more in your savings?`),
     5: () => "Give the court one concrete reason it has to be this one, and it has to be now.",
     6: () => "Final chance. What would you give up to make room for it?",
   };
