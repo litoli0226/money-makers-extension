@@ -98,7 +98,9 @@
         ".a-price .a-offscreen",
       ])
     );
-    return title ? { items: [{ title, price }], total: price } : null;
+    const imgEl = document.querySelector("#landingImage, #imgBlkFront, #main-image-container img");
+    const image = imgEl?.getAttribute("data-old-hires") || imgEl?.currentSrc || imgEl?.src || "";
+    return title ? { items: [{ title, price, image }], total: price } : null;
   }
 
   // Cart rows carry data-producttitle / data-price / data-quantity (checked on live amazon.com/cart, Nov 2026).
@@ -116,6 +118,7 @@
         title,
         price: num(row.dataset.price) ?? num(firstText([".a-price .a-offscreen", ".sc-product-price"], row)),
         quantity: parseInt(row.dataset.quantity, 10) || 1,
+        image: row.querySelector("img.sc-product-image, .sc-product-image img, img")?.src || "",
       });
     }
     const sum = items.reduce((t, i) => t + (i.price || 0) * i.quantity, 0);
@@ -149,7 +152,8 @@
     const total = num(totalText) ?? totalByLabel();
     const currency = (totalText.match(/\b(USD|CAD|EUR|GBP|AUD)\b/) || [])[1];
     const titles = [...document.querySelectorAll(".item-title, .lineitem-title-text")].map((el) => el.textContent.trim()).filter(Boolean);
-    const items = titles.length ? titles.map((title) => ({ title })) : [{ title: "Your order" }];
+    const imgs = [...document.querySelectorAll(".item-image img, .lineitem-image img")].map((el) => el.src);
+    const items = titles.length ? titles.map((title, i) => ({ title, image: imgs[i] || "" })) : [{ title: "Your order" }];
     return { items, total, currency };
   }
 
@@ -739,6 +743,58 @@
   const trialFormat = (settings) => settings.trialFormat || "mvp";
   const TITLES = ["Mr.", "Mrs.", "Ms.", "Mx."];
 
+  // "Meet the judge": a screen of its own between the court notice and the
+  // courtroom. All rise, the judge rises behind the bench, asks the defendant's
+  // name; the title dropdown sits beside a fixed "Moneybags". Start = gavel.
+  // Resolves with the title, or null if they leave.
+  function meetTheJudge(cast, L, item) {
+    return new Promise((resolve) => {
+      showPage(`
+        <div class="topbar"><span></span><button class="chip-btn" data-act="door-leave">Leave ${ICON.x}</button></div>
+        <div class="door">
+          <p class="door-rise">All rise.</p>
+          <div class="door-judge">
+            <div class="door-fig">${cast.judge}</div>
+            <div class="door-bench"><span class="plate">The judge</span></div>
+          </div>
+          <div class="door-ask">
+            <p class="bubble q">${esc(L.name)}</p>
+            <form class="name-pick" id="namePick">
+              <label class="select"><span class="sr">Title</span><select id="title" required>
+                <option value="" disabled selected>Title</option>${TITLES.map((t) => `<option>${esc(t)}</option>`).join("")}
+              </select>${ICON.chevron}</label>
+              <span class="surname" aria-label="Last name">Moneybags</span>
+              <button class="btn primary small" disabled>Start</button>
+            </form>
+          </div>
+          <p class="door-gavel" aria-live="polite"></p>
+        </div>`, "meet");
+      const sel = $("#title");
+      const btn = $("#namePick button");
+      sel.addEventListener("keydown", (e) => e.stopPropagation());
+      sel.onchange = () => (btn.disabled = !sel.value);
+      setTimeout(() => sel.focus(), 1900); // after the judge has risen
+      on("[data-act=door-leave]", () => {
+        logOutcome(item, "left", { where: "meet the judge", format: "mvp" });
+        pendingButton = null;
+        clearUI();
+        if (pageType() === "checkout") location.href = `${location.origin}/cart`;
+        resolve(null);
+      });
+      $("#namePick").onsubmit = async (e) => {
+        e.preventDefault();
+        if (!sel.value) return sel.focus();
+        sel.disabled = btn.disabled = true;
+        const door = layer.querySelector(".door");
+        door.querySelector(".door-bench .plate").textContent = `${sel.value} Moneybags v. ${globalThis.gicShortName(item.label)}`;
+        door.querySelector(".door-gavel").textContent = "Court is in session.";
+        door.classList.add("gavel");
+        await wait(1100);
+        resolve(sel.value);
+      };
+    });
+  }
+
   async function startMvpTrial(item, settings, history, castFromNotice = null) {
     const L = globalThis.gicMvpLines;
     const short = globalThis.gicShortName(item.label);
@@ -752,11 +808,21 @@
     let warned = false;
     let howStep = false; // the live hint only runs on "how" questions
 
+    // ----- 1. Meet the judge: the title pick is the doorway into court -----
+    state.title = await meetTheJudge(cast, L, item);
+    if (state.title == null) return; // left at the door
+    const exhibit = item.items.length === 1 ? item.items[0] : null;
+    const exhibitImg = item.items.find((i) => i.image)?.image || "";
+
     showPage(`
       <div class="topbar"><div class="eta" role="progressbar" aria-label="Time left in your trial"><div class="eta-bar"><i id="etaFill"></i></div><span id="etaText"></span></div><button class="chip-btn" data-act="leave">Leave trial ${ICON.x}</button></div>
       <div class="court-stage">
         <div class="scene" id="scene" aria-hidden="true">
           <div class="seal-wall">${ICON.scale}</div>
+          <div class="exhibit" id="exhibit">
+            <span class="ex-img">${exhibitImg ? `<img src="${esc(exhibitImg)}" alt="" />` : ICON.box}</span>
+            <span class="ex-text"><small>Exhibit A</small><b>${esc(exhibit ? short : `${item.items.length} items`)}</b><span>${esc(money(item.total, item.currency))}</span></span>
+          </div>
           <div class="spot witness" data-who="witness">
             <div class="figure">${cast.witness}<span class="speech"><i></i><i></i><i></i></span></div>
             <div class="stand"><span class="plate">Witness stand</span></div>
@@ -811,7 +877,7 @@
       eta.left = eta.left.filter((x) => x !== k);
       drawEta();
     };
-    drawEta();
+    stepDone("name"); // done at the door
 
     on("[data-act=leave]", () => {
       state.left = true;
@@ -952,37 +1018,11 @@
       });
     }
 
-    // Title dropdown + the fixed last name. No free text: everyone is a Moneybags.
-    function askTitle() {
-      return new Promise((resolve) => {
-        controls.innerHTML = `<form class="picker name-pick" id="namePick">
-            <label class="select"><span class="sr">Title</span><select id="title" required>
-              <option value="" disabled selected>Title</option>${TITLES.map((t) => `<option>${esc(t)}</option>`).join("")}
-            </select>${ICON.chevron || ""}</label>
-            <span class="surname" aria-label="Last name">Moneybags</span>
-            <button class="btn primary small" disabled>That's me</button>
-          </form>`;
-        const sel = $("#title");
-        const btn = controls.querySelector("button");
-        scroll();
-        sel.focus();
-        sel.addEventListener("keydown", (e) => e.stopPropagation());
-        sel.onchange = () => (btn.disabled = !sel.value);
-        $("#namePick").onsubmit = (e) => {
-          e.preventDefault();
-          if (!sel.value) return sel.focus();
-          controls.innerHTML = "";
-          resolve(sel.value);
-        };
-      });
-    }
-
-    // ----- 1. Name (fixed copy, C1 option a: the title pick doesn't count as an input) -----
-    say("judge", L.name, { question: true });
-    state.title = await askTitle();
-    say("defendant", `${state.title} Moneybags`);
-    stepDone("name");
-    if (state.left) return;
+    moment(`Court is in session. ${state.title} Moneybags, defendant.`);
+    await wait(500);
+    moment("The court enters Exhibit A.");
+    $("#exhibit").classList.add("in");
+    await wait(700);
 
     // ----- 2. Item, price line, "how" -----
     const r0 = await ask("mvp_item");
@@ -1336,6 +1376,7 @@
     scale: svg('<path d="M12 4v16M8 20h8M5 7h14M12 4l-1 3h2z"/><path d="M5 7l-3 6a3 3 0 0 0 6 0L5 7zM19 7l-3 6a3 3 0 0 0 6 0l-3-6z"/>'),
     check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="2.4"'),
     chevron: svg('<path d="M7 10l5 5 5-5"/>', 'stroke-width="2"'),
+    box: svg('<path d="M4 8l8-4 8 4v8l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v8"/>'),
     clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
     dollar: svg('<path d="M12 3v18M16.5 7.5c-.8-1.3-2.4-2-4.5-2-2.6 0-4.3 1.3-4.3 3.2 0 4.6 9 2.4 9 7 0 2-1.9 3.3-4.6 3.3-2.3 0-4-.8-4.8-2.3"/>', 'stroke-width="2.2"'),
     x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
@@ -1579,11 +1620,39 @@ label input:focus { border-color: var(--blue); }
 .picker .chip { padding: 8px 14px; font-size: 14px; }
 .picker input { flex: 1; min-width: 140px; border: 1.5px solid var(--paper); border-radius: 12px; padding: 8px 12px; font-size: 14px; outline: none; }
 .picker input:focus { border-color: var(--blue); }
-.name-pick { flex-wrap: nowrap; }
-.name-pick .select { position: relative; display: inline-flex; align-items: center; }
+/* Meet the judge (the doorway into court) */
+.page.meet { display: flex; flex-direction: column; background: radial-gradient(ellipse 55% 60% at 50% 42%, var(--white) 0 40%, var(--bill) 75%); }
+.door { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 0 16px 64px; }
+.door-rise { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .24em; text-transform: uppercase; color: var(--seal); animation: fade .6s ease-out both; }
+.door-judge { display: flex; flex-direction: column; align-items: center; }
+.door-fig { width: 132px; height: 132px; margin-bottom: -14px; animation: judgeRise .9s cubic-bezier(.2,.8,.2,1) .5s both; position: relative; z-index: 0; }
+.door-fig svg { width: 132px; height: 132px; }
+.door-bench { position: relative; z-index: 1; width: 340px; max-width: 86vw; height: 76px; border-radius: 12px 12px 0 0; background: var(--ink); display: grid; place-items: center; }
+.door-bench .plate { font-size: 13px; padding: 4px 12px; background: rgba(255,255,255,.12); color: var(--white); }
+.door-ask { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 420px; max-width: 100%; animation: in .4s ease-out 1.5s both; }
+.door-ask .bubble { margin: 0; font-size: 17px; font-weight: 600; padding: 12px 16px; background: var(--white); border: 1px solid var(--line); border-radius: 14px; }
+.door .name-pick { width: 100%; background: var(--white); border: 1px solid var(--line); border-radius: 14px; padding: 10px 10px 10px 12px; }
+.door-gavel { margin: 0; min-height: 22px; font-size: 18px; font-weight: 700; color: var(--ink); }
+.door.gavel .door-bench { animation: thud .35s ease-out; }
+.door.gavel .door-gavel { animation: in .3s ease-out; }
+.door.gavel .door-ask { opacity: .5; transition: opacity .3s; }
+@keyframes judgeRise { from { opacity: 0; transform: translateY(70px); } }
+@keyframes thud { 30% { transform: translateY(3px); } }
+/* Exhibit A, on the courtroom wall */
+.exhibit { position: absolute; top: 8px; left: 12px; z-index: 1; display: flex; align-items: center; gap: 8px; max-width: 210px; padding: 4px 10px 4px 4px; background: var(--white); border: 1px solid var(--line); border-radius: 9px; opacity: 0; transform: translateY(-6px); transition: opacity .4s, transform .4s ease-out; }
+.exhibit.in { opacity: 1; transform: none; }
+.ex-img { width: 30px; height: 30px; flex: none; border-radius: 7px; background: var(--bill); display: grid; place-items: center; overflow: hidden; color: var(--seal); }
+.ex-img img { width: 100%; height: 100%; object-fit: contain; }
+.ex-img svg { width: 18px; height: 18px; }
+.ex-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.ex-text small { font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--gold-deep); }
+.ex-text b { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ex-text span { font-size: 11px; color: var(--seal); }
+.name-pick { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+.name-pick .select { position: relative; display: inline-flex; flex-direction: row; align-items: center; gap: 0; }
 .name-pick select { appearance: none; -webkit-appearance: none; font: inherit; font-size: 14px; color: var(--ink); background: #fff; border: 1.5px solid var(--paper); border-radius: 12px; padding: 8px 32px 8px 12px; cursor: pointer; outline: none; }
 .name-pick select:focus { border-color: var(--blue); }
-.name-pick .select svg { position: absolute; right: 10px; width: 14px; height: 14px; pointer-events: none; }
+.name-pick .select svg { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--seal); pointer-events: none; }
 .name-pick .surname { flex: 1; font-size: 15px; font-weight: 600; color: var(--ink); padding: 8px 2px; }
 .name-pick .btn:disabled { opacity: .4; cursor: default; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
