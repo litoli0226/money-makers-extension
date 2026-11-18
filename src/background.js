@@ -284,5 +284,6 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   // Older builds called OpenRouter mode "live".
   const { settings } = await chrome.storage.local.get("settings");
   if (settings?.mode === "live") await chrome.storage.local.set({ settings: { ...settings, mode: "openrouter" } });
-  if (reason === "install") chrome.runtime.openOptionsPage();
+  // Guest-trial MVP: no onboarding. A tester has the extension already and is
+  // shopping; Settings opens only from the toolbar popup or chrome://extensions.
 });

@@ -8,7 +8,7 @@ Screens follow the team's Figma file (Low-Mid-Fi Wireframes Iteration 2, "Hi-fi 
 
 1. Download this repo: **Code → Download ZIP** and unzip it, or `git clone` it.
 2. Open `chrome://extensions`, turn on **Developer mode** (top right), click **Load unpacked**, and pick the unzipped folder.
-3. The settings page opens. Add a savings goal if you want (or leave it blank).
+3. Nothing opens on install (no onboarding in the guest-trial MVP). To change switches, click the extension's toolbar icon → Settings, or Details → Extension options in `chrome://extensions`.
 4. Go to amazon.com or amazon.ca and click **Buy Now** on a product, or **Proceed to checkout** in your cart.
 
 After pulling new changes, click the reload icon on the extension in `chrome://extensions`, then refresh the Amazon tab.
