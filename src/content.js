@@ -1,15 +1,15 @@
-// Content script: detects the shopping moment, shows the summons, and runs the
-// hearing overlay. All UI lives in a shadow root so Amazon's CSS can't touch it
-// (and ours can't break Amazon).
+// Content script. Spots the checkout moment, shows the quick check, and runs
+// the courtroom. Screens follow the team's Figma (Low-Mid-Fi Wireframes
+// Iteration 2, "Hi-fi prototype"). All UI lives in a shadow root so the store's
+// CSS can't touch it, and ours can't break the store.
 
 (() => {
-  if (window.__gicLoaded) return;
-  window.__gicLoaded = true;
+  if (window.__mmLoaded) return;
+  window.__mmLoaded = true;
 
-  const MAX_DEFENSES = 2; // team decision: 1-2 rounds max
+  const flow = globalThis.gicFlow;
   const DAY_MS = 24 * 60 * 60 * 1000;
-  const SKIP_REVEAL_MS = 3000; // "skip court" link fades in after this
-  const SKIP_HOLD_MS = 1500; // and must be held this long
+  const LIVE_TIMEOUT_MS = 25000;
 
   // Buttons that mean "I'm buying now". Amazon changes these, so keep a list.
   const BUY_SELECTORS = [
@@ -23,10 +23,27 @@
   // Fallback: match the button's visible label. Covers "Place your order in CAD" etc.
   const BUY_TEXT = /\b(proceed to (retail )?checkout|place (your )?order|buy now|continue to checkout)\b/i;
 
+  // "Skip these purchases" chips on the settings page. Items whose title matches
+  // never trigger a check-in.
+  const SKIP_WORDS = {
+    groceries: ["grocery", "snack", "coffee", "cereal", "pasta", "rice", "milk", "bread", "oatmeal", "granola"],
+    textbooks: ["textbook", "edition", "isbn", "workbook", "study guide", "lab manual"],
+    medicine: [
+      "melatonin", "sleep aid", "vitamin", "supplement", "allergy", "antihistamine", "cold & flu", "cough", "pain relief",
+      "ibuprofen", "acetaminophen", "tylenol", "advil", "aspirin", "bandage", "first aid", "prescription", "medicine",
+      "thermometer", "contact lens", "sunscreen",
+    ],
+    bills: [],
+    gifts: ["gift"],
+    toiletries: ["toothpaste", "toothbrush", "floss", "deodorant", "shampoo", "conditioner", "soap", "tampon", "pads", "razor", "toilet paper", "paper towel"],
+    transit: ["transit", "bus pass", "presto", "metrocard"],
+  };
+  const DEFAULT_SKIPS = ["groceries", "textbooks", "medicine"];
+
   let pendingButton = null; // the buy button we intercepted
   let allowNextClick = false;
 
-  const log = (...args) => console.log("[GIC]", ...args);
+  const log = (...args) => console.log("[MM]", ...args);
 
   function labelOf(el) {
     const ids = (el.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean);
@@ -57,7 +74,7 @@
     }
     return "";
   };
-  const money = (s) => {
+  const num = (s) => {
     const m = String(s ?? "").replace(/,/g, "").match(/(\d+(?:\.\d{1,2})?)/);
     return m ? parseFloat(m[1]) : null;
   };
@@ -73,7 +90,7 @@
   // Checked on a live amazon.com product page (Nov 2026).
   function scrapeProduct() {
     const title = firstText(["#productTitle"]);
-    const price = money(
+    const price = num(
       firstText([
         "#corePrice_feature_div .a-offscreen",
         "#corePriceDisplay_desktop_feature_div .a-offscreen",
@@ -81,12 +98,10 @@
         ".a-price .a-offscreen",
       ])
     );
-    const category = firstText(["#wayfinding-breadcrumbs_feature_div li:last-child a"]);
-    return title ? { items: [{ title, price, category }], total: price } : null;
+    return title ? { items: [{ title, price }], total: price } : null;
   }
 
   // Cart rows carry data-producttitle / data-price / data-quantity (checked on live amazon.com/cart, Nov 2026).
-  // Subtotal is #sc-subtotal-amount-buybox; Proceed to checkout is input[name=proceedToRetailCheckout].
   // Only read rows inside the active cart: "Saved for later" uses the same row markup.
   function scrapeCart() {
     const seen = new Set();
@@ -99,12 +114,12 @@
       if (!title) continue;
       items.push({
         title,
-        price: money(row.dataset.price) ?? money(firstText([".a-price .a-offscreen", ".sc-product-price"], row)),
+        price: num(row.dataset.price) ?? num(firstText([".a-price .a-offscreen", ".sc-product-price"], row)),
         quantity: parseInt(row.dataset.quantity, 10) || 1,
       });
     }
     const sum = items.reduce((t, i) => t + (i.price || 0) * i.quantity, 0);
-    const total = money(firstText(["#sc-subtotal-amount-activecart", "#sc-subtotal-amount-buybox"])) ?? sum;
+    const total = num(firstText(["#sc-subtotal-amount-activecart", "#sc-subtotal-amount-buybox"])) ?? sum;
     return items.length ? { items, total } : null;
   }
 
@@ -115,16 +130,15 @@
     );
     for (const el of labels) {
       const row = el.closest(".order-summary-grid, tr, li, .a-row, [class*=row], div");
-      const n = money(row?.textContent.replace(el.textContent, ""));
+      const n = num(row?.textContent.replace(el.textContent, ""));
       if (n) return n;
     }
     return null;
   }
 
-  // Order page markup isn't verified yet, so fall back to text matching.
+  // Checked on live amazon.com Place Your Order page (Nov 2026). Two tables exist: a hidden
+  // USD "marketplace" one and the visible "transactional" one in the shopper's currency.
   function scrapeCheckout() {
-    // Checked on live amazon.com Place Your Order page (Nov 2026). Two tables exist: a hidden
-    // USD "marketplace" one and the visible "transactional" one in the shopper's currency.
     const totalText = firstText([
       "#subtotals-transactional-table .grand-total-cell",
       "#subtotals-marketplace-table .grand-total-cell",
@@ -132,11 +146,9 @@
       ".grand-total-price",
       "[data-testid='order-summary-total']",
     ]);
-    const total = money(totalText) ?? totalByLabel();
+    const total = num(totalText) ?? totalByLabel();
     const currency = (totalText.match(/\b(USD|CAD|EUR|GBP|AUD)\b/) || [])[1];
-    const titles = [...document.querySelectorAll(".item-title, .lineitem-title-text")]
-      .map((el) => el.textContent.trim())
-      .filter(Boolean);
+    const titles = [...document.querySelectorAll(".item-title, .lineitem-title-text")].map((el) => el.textContent.trim()).filter(Boolean);
     const items = titles.length ? titles.map((title) => ({ title })) : [{ title: "Your order" }];
     return { items, total, currency };
   }
@@ -156,62 +168,80 @@
 
   // ---------- storage ----------
 
-  const getStore = () => chrome.storage.local.get({ settings: {}, history: [], recess: {} });
+  const getStore = () => chrome.storage.local.get({ settings: {}, history: [], recess: {}, neverItems: [], wishlist: [] });
 
-  async function logOutcome(item, verdict, outcome, transcript = []) {
+  const savedTotal = (settings, history) =>
+    (Number(settings.savedSoFar) || 0) +
+    history.filter((h) => h.outcome === "saved" || h.outcome === "kept").reduce((t, h) => t + (h.total || 0), 0);
+
+  async function logOutcome(item, outcome, extra = {}) {
     const { history } = await getStore();
-    history.unshift({ date: Date.now(), title: item.label, total: item.total, verdict, outcome, transcript });
+    history.unshift({ date: Date.now(), title: item.label, total: item.total, outcome, ...extra });
     await chrome.storage.local.set({ history: history.slice(0, 200) });
   }
 
-  async function recess(item) {
-    const { recess } = await getStore();
-    recess[item.label] = Date.now() + DAY_MS;
-    await chrome.storage.local.set({ recess });
+  async function addToWishlist(item) {
+    const { wishlist } = await getStore();
+    wishlist.unshift({ date: Date.now(), title: item.label, total: item.total, url: location.href });
+    await chrome.storage.local.set({ wishlist: wishlist.slice(0, 100) });
   }
 
-  // Local checks that skip the hearing entirely.
-  function shouldSkip(settings, item) {
-    const never = (settings.neverSites || []).map((s) => s.trim().toLowerCase()).filter(Boolean);
-    if (never.some((s) => location.hostname.includes(s))) return "site is on your never list";
-    if (settings.skipUnder && item.total != null && item.total < Number(settings.skipUnder)) return "under your threshold";
+  // Local checks that skip the check-in entirely.
+  function skipReason(settings, neverItems, item) {
+    if (neverItems.includes(item.label)) return "you asked never to be asked about this item";
+    const custom = String(settings.skipCustom || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    if (custom.some((s) => location.hostname.includes(s))) return "this store is on your skip list";
+    const cats = settings.skipCategories || DEFAULT_SKIPS;
+    const words = [...cats.flatMap((c) => SKIP_WORDS[c] || []), ...custom];
+    const titles = item.items.map((i) => i.title.toLowerCase());
+    if (titles.length && titles.every((t) => words.some((w) => t.includes(w)))) return "everything here is on your skip list";
     return null;
   }
 
-  function profileFrom(settings) {
-    const saving = settings.purpose !== "conscious";
+  function profileFrom(settings, history) {
+    const target = Number(settings.goalAmount) || null;
     return {
-      purpose: saving ? "saving_for_goal" : "money_conscious",
-      goal:
-        saving && settings.goalName
-          ? { name: settings.goalName, target: Number(settings.goalAmount) || null, saved_so_far: Number(settings.savedSoFar) || null }
-          : null,
-      cutting_back_on: !saving ? settings.cutBack || "" : "",
-      monthly_fun_budget: Number(settings.monthlyBudget) || null,
-      personal_rules: settings.rules || "",
+      goal: settings.goalName ? { name: settings.goalName, target, by: settings.goalDate || null } : null,
+      saved: savedTotal(settings, history),
     };
   }
 
   // ---------- UI shell ----------
 
   const host = document.createElement("div");
-  host.id = "gic-root";
-  host.style.cssText = "all:initial; position:fixed; z-index:2147483647; inset:auto 0 0 auto;";
+  host.id = "money-makers-root";
+  host.style.cssText = "all:initial; position:fixed; z-index:2147483647; inset:auto;";
   const shadow = host.attachShadow({ mode: "open" });
   shadow.innerHTML = `<style>${CSS()}</style><div id="layer"></div>`;
   const layer = shadow.getElementById("layer");
   document.documentElement.appendChild(host);
+  loadFont();
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-  const fmt = (n, cur) => (n == null ? "" : `$${Number(n).toFixed(2)}${cur && cur !== "USD" ? ` ${cur}` : ""}`);
+  const money = (n, cur) => globalThis.gicMoney(n, cur);
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const $ = (sel) => layer.querySelector(sel);
+  const on = (sel, fn) => {
+    const el = $(sel);
+    if (el) el.onclick = fn;
+  };
 
   function clearUI() {
     layer.innerHTML = "";
-    host.style.inset = "auto 0 0 auto";
+    host.style.inset = "auto";
+  }
+  // Quick check sits top-right over the page. Everything else takes over the page.
+  function showPanel(html) {
+    host.style.inset = "0 0 auto auto";
+    layer.innerHTML = `<div class="panel-wrap"><div class="panel" role="dialog">${html}</div></div>`;
+  }
+  function showPage(html, cls = "") {
+    host.style.inset = "0";
+    layer.innerHTML = `<div class="page ${cls}">${html}</div>`;
   }
 
-  // Once you've chosen to go ahead, don't summon again on the next checkout step.
-  const CLEARED_KEY = "gicClearedAt";
+  // Once you've chosen to go ahead, don't check in again on the next checkout step.
+  const CLEARED_KEY = "mmClearedAt";
   const CLEARED_MS = 20 * 60 * 1000;
   const isCleared = () => {
     try {
@@ -234,310 +264,477 @@
     }
   }
 
-  // Press-and-hold button: there if you really need it, but you can't tap past it.
-  function makeHoldButton(btn, onDone) {
-    let timer = null;
-    const start = (e) => {
-      e.preventDefault();
-      if (timer) return;
-      btn.classList.add("holding");
-      timer = setTimeout(() => {
-        timer = null;
-        btn.classList.remove("holding");
-        onDone();
-      }, SKIP_HOLD_MS);
-    };
-    const cancel = () => {
-      clearTimeout(timer);
-      timer = null;
-      btn.classList.remove("holding");
-    };
-    btn.addEventListener("pointerdown", start);
-    btn.addEventListener("pointerup", cancel);
-    btn.addEventListener("pointerleave", cancel);
-    btn.addEventListener("keydown", (e) => (e.key === " " || e.key === "Enter") && !e.repeat && start(e));
-    btn.addEventListener("keyup", (e) => (e.key === " " || e.key === "Enter") && cancel());
+  // Urbanist comes from the service worker as bytes (see background.js).
+  async function loadFont() {
+    try {
+      const res = await chrome.runtime.sendMessage({ type: "font" });
+      if (!res?.ok) return;
+      const bytes = Uint8Array.from(atob(res.data), (c) => c.charCodeAt(0));
+      const face = new FontFace("Urbanist", bytes.buffer, { weight: "400 700" });
+      await face.load();
+      document.fonts.add(face);
+    } catch (e) {
+      log("Font not loaded, using system font.", e?.message);
+    }
   }
 
-  // ---------- The summons ----------
+  // ---------- shared pieces ----------
 
-  function showSummon(item, note = "") {
-    host.style.inset = "0";
-    layer.innerHTML = `
-      <div class="dim">
-        <div class="summons" role="dialog" aria-label="You've been summoned">
-          <div class="summons-badge">${GAVEL_SVG}</div>
-          <div class="summons-kicker">Before you check out</div>
-          <h2 class="summons-title">You've been summoned</h2>
-          <p class="summons-sub">Judge Penny would like a quick word about</p>
-          <div class="summons-item">
-            <span class="summons-item-name">${esc(item.label)}</span>
-            ${item.total != null ? `<span class="summons-item-price">${fmt(item.total, item.currency)}</span>` : ""}
-          </div>
-          ${note ? `<p class="summons-note">${esc(note)}</p>` : ""}
-          <button class="btn btn-big" data-act="court">Take it to court <span class="btn-hint">about 30 sec</span></button>
-          <button class="skip" data-act="skip" aria-label="Hold to skip court">
-            <span class="skip-fill"></span><span class="skip-label">Hold to skip court</span>
-          </button>
-        </div>
+  function goalMath(profile, item) {
+    const g = profile.goal;
+    const price = item?.total || 0;
+    const before = profile.saved;
+    const after = before + price;
+    if (g?.target) {
+      const pct = (v) => Math.min(100, Math.round((v / g.target) * 100));
+      let milestone = "";
+      if (pct(before) < 50 && pct(after) >= 50 && pct(after) < 100) milestone = `you're past halfway to ${g.name}.`;
+      if (pct(before) < 100 && pct(after) >= 100) milestone = `that's your ${g.name} goal reached.`;
+      return { hasGoal: true, target: g.target, before, after, pctBefore: pct(before), pctAfter: pct(after), left: Math.max(g.target - after, 0), milestone };
+    }
+    const step = 100;
+    const next = (Math.floor(before / step) + 1) * step;
+    const pct = (v) => Math.min(100, Math.round((v / next) * 100));
+    return {
+      hasGoal: false,
+      target: next,
+      before,
+      after,
+      pctBefore: pct(before),
+      pctAfter: pct(after),
+      left: Math.max(next - after, 0),
+      milestone: after >= next ? `you're past $${next} saved.` : "",
+    };
+  }
+
+  const bar = (pct) => `<div class="bar"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></div>`;
+
+  // The goal card used on the quick check ("before") and the saved screens ("after").
+  function goalCard(profile, m, mode) {
+    const g = profile.goal;
+    const value = mode === "after" ? m.after : m.before;
+    const pct = mode === "after" ? m.pctAfter : m.pctBefore;
+    if (m.hasGoal) {
+      return `<div class="card goal">
+        <div class="tiny">Saved for ${esc(g.name)} so far</div>
+        <div class="amount"><b>${money(value)}</b><span>of ${money(m.target)}</span></div>
+        ${bar(pct)}
+        <div class="bar-foot"><span>${pct}% there</span>${
+          mode === "before" ? `<span class="blue">Skip it → ${m.pctAfter}%</span>` : `<span>${money(Math.max(m.target - value, 0))} to go</span>`
+        }</div>
       </div>`;
-    layer.querySelector("[data-act=court]").onclick = () => startTrial(item);
-    layer.querySelector("[data-act=court]").focus();
-    const skip = layer.querySelector("[data-act=skip]");
-    setTimeout(() => skip.classList.add("shown"), SKIP_REVEAL_MS);
-    makeHoldButton(skip, () => {
-      logOutcome(item, "none", "skipped court");
+    }
+    return `<div class="card goal">
+      <div class="row-between"><span class="tiny">You've saved so far</span>${
+        mode === "before" ? `<button class="chip gold" data-act="setgoal">+ Set a goal</button>` : ""
+      }</div>
+      <div class="amount"><b>${money(value)}</b><span>· next milestone ${money(m.target)}</span></div>
+      ${bar(pct)}
+      <div class="bar-foot"><span>${pct}% of the way</span>${mode === "before" ? `<span class="blue">Skip it → ${m.pctAfter}%</span>` : ""}</div>
+    </div>`;
+  }
+
+  // Slim goal line on the verdict screens.
+  function goalLine(profile) {
+    const g = profile.goal;
+    if (!g?.target) return "";
+    const pct = Math.min(100, Math.round((profile.saved / g.target) * 100));
+    return `<div class="card goal-line"><div class="row-between"><span>${esc(g.name)}</span><span class="blue">${money(profile.saved)} of ${money(g.target)}</span></div>${bar(pct)}</div>`;
+  }
+
+  // ---------- 02 Quick check ----------
+
+  function showQuickCheck(item, settings, history, note = "") {
+    const profile = profileFrom(settings, history);
+    const m = goalMath(profile, item);
+    const short = globalThis.gicShortName(item.label);
+    const the = item.items.length > 1 ? "this cart" : `the ${short}`;
+    const price = money(item.total, item.currency);
+    const hint = m.milestone
+      ? `<div class="hint">${ICON.star}<span>This would ${m.hasGoal ? (m.pctAfter >= 100 ? "finish your goal" : "get you past halfway") : `push you past ${money(m.target)} saved`}</span></div>`
+      : "";
+    showPanel(`
+      <div class="panel-head"><span>Quick check</span><button class="icon-btn" data-act="close" aria-label="Close">${ICON.x}</button></div>
+      ${goalCard(profile, m, "before")}
+      <h2 class="h2">Do you really need it?</h2>
+      <p class="muted">${
+        m.hasGoal ? `If you skip ${esc(the)}, ${price} goes to ${esc(profile.goal.name)} instead.` : `If you skip ${esc(the)}, that's ${price} straight into your savings.`
+      }</p>
+      ${note ? `<p class="note">${esc(note)}</p>` : ""}
+      ${hint}
+      <div class="stack">
+        <button class="btn primary" data-act="save">You're right. I'll save it</button>
+        <button class="btn outline" data-act="court">Yes, I want it</button>
+      </div>
+      <button class="link" data-act="never">Never ask about this item</button>`);
+    $("[data-act=save]").focus();
+    on("[data-act=close]", clearUI);
+    on("[data-act=setgoal]", () => chrome.runtime.sendMessage({ type: "openOptions" }));
+    on("[data-act=save]", () => saveIt(item, settings, history, "checkout", "panel"));
+    on("[data-act=court]", () => startTrial(item, settings, history));
+    on("[data-act=never]", async () => {
+      const { neverItems } = await getStore();
+      await chrome.storage.local.set({ neverItems: [...new Set([item.label, ...neverItems])].slice(0, 500) });
+      await logOutcome(item, "never");
       proceedWithPurchase();
     });
   }
 
-  // ---------- The hearing ----------
-  // A little courtroom scene up top (judge on the bench, prosecutor left, you
-  // right, the item as Exhibit A), with the full chat log underneath.
+  // ---------- 03 / 11 Saved ----------
 
-  const SPEAKERS = {
-    judge: { name: "Judge Penny", svg: () => JUDGE_SVG },
-    prosecutor: { name: "Prosecutor Pinch", svg: () => PROSECUTOR_SVG },
-    defendant: { name: "You", svg: () => DEFENDANT_SVG },
-  };
-  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  const readTime = (text) => Math.min(2600, 700 + text.length * 22); // pause so people can read each line
-
-  async function startTrial(item) {
-    const { settings } = await getStore();
-    const profile = profileFrom(settings);
-    const transcript = [];
-    let defenses = 0;
-
-    host.style.inset = "0";
-    layer.innerHTML = `
-      <div class="dim">
-        <div class="court" role="dialog" aria-label="Hearing">
-          <header class="court-head">
-            <div class="court-title">
-              <span class="court-kicker">Small Claims &amp; Big Carts</span>
-              <span class="court-name">The People v. Your Cart</span>
-            </div>
-            <div class="pips" aria-label="Round"><span class="pip on"></span><span class="pip"></span></div>
-            <button class="x" data-act="close" aria-label="Leave court">&times;</button>
-          </header>
-
-          <div class="scene" id="scene">
-            <div class="wall"><div class="seal">${GAVEL_SVG}</div></div>
-            <div class="spot bench" data-who="judge">
-              <div class="char">${JUDGE_SVG}</div>
-              <div class="desk desk-bench"><span>Judge Penny</span></div>
-            </div>
-            <div class="spot left" data-who="prosecutor">
-              <div class="char">${PROSECUTOR_SVG}</div>
-              <div class="desk"><span>Prosecution</span></div>
-            </div>
-            <div class="spot right" data-who="defendant">
-              <div class="char">${DEFENDANT_SVG}</div>
-              <div class="desk"><span>Defense (you)</span></div>
-            </div>
-            <div class="exhibit">
-              <span class="exhibit-tag">Exhibit A</span>
-              <span class="exhibit-title">${esc(item.label)}</span>
-              <span class="exhibit-price">${fmt(item.total, item.currency)}</span>
-              ${budgetLine(item, profile)}
-            </div>
-            <div class="speech" id="speech" hidden></div>
-          </div>
-
-          <div class="log" id="log" aria-live="polite"></div>
-          <div class="dock" id="dock"></div>
-        </div>
-      </div>`;
-    layer.querySelector("[data-act=close]").onclick = () => {
-      logOutcome(item, "none", "left court", transcript);
-      clearUI();
-    };
-    const scene = shadow.getElementById("scene");
-    const speech = shadow.getElementById("speech");
-    const logEl = shadow.getElementById("log");
-    const dock = shadow.getElementById("dock");
-    const pips = [...shadow.querySelectorAll(".pip")];
-
-    function spotlight(who, text) {
-      for (const s of scene.querySelectorAll(".spot")) s.classList.toggle("talking", s.dataset.who === who);
-      speech.hidden = false;
-      speech.className = `speech at-${who}`;
-      speech.innerHTML = `<b>${esc(SPEAKERS[who].name)}</b>${esc(text)}`;
-      // restart the pop animation
-      speech.style.animation = "none";
-      void speech.offsetWidth;
-      speech.style.animation = "";
-    }
-
-    function addToLog(who, text) {
-      const row = document.createElement("div");
-      row.className = `msg ${who}`;
-      row.innerHTML = `<div class="avatar">${SPEAKERS[who].svg()}</div>
-        <div class="msg-body"><div class="who">${esc(SPEAKERS[who].name)}</div><div class="bubble">${esc(text)}</div></div>`;
-      logEl.appendChild(row);
-      logEl.scrollTop = logEl.scrollHeight;
-    }
-
-    async function play(lines) {
-      for (const { speaker, text } of lines) {
-        const who = SPEAKERS[speaker] ? speaker : "judge";
-        transcript.push({ role: who, text });
-        spotlight(who, text);
-        addToLog(who, text);
-        await wait(readTime(text));
+  async function saveIt(item, settings, history, where, style, transcript = []) {
+    const profile = profileFrom(settings, history); // before this save
+    const m = goalMath(profile, item);
+    await logOutcome(item, "saved", { where, transcript });
+    await addToWishlist(item);
+    pendingButton = null;
+    const short = globalThis.gicShortName(item.label);
+    const by = profile.goal?.by ? new Date(`${profile.goal.by}T00:00`).toLocaleDateString([], { month: "short", day: "numeric" }) : "";
+    const html = `
+      <div class="confetti" aria-hidden="true">${CONFETTI}</div>
+      <div class="seal blue">${ICON.dollar}</div>
+      <h2 class="h2 center">Nice, you just saved ${money(item.total, item.currency)}</h2>
+      ${goalCard(profile, m, "after")}
+      ${m.milestone ? `<div class="hint box">${ICON.star}<span>Milestone: ${esc(m.milestone)}</span></div>` : ""}
+      ${
+        m.hasGoal
+          ? ""
+          : `<button class="card row-link" data-act="goal">${ICON.flag}<span><b>Give your savings a goal</b><small>A trip, a laptop, a safety net. Every dollar you skip counts toward it.</small></span>${ICON.arrow}</button>`
       }
-    }
-
-    const deliberating = (who = "prosecutor") => {
-      for (const s of scene.querySelectorAll(".spot")) s.classList.toggle("thinking", s.dataset.who === who);
-      dock.innerHTML = `<div class="typing"><span></span><span></span><span></span> The court is conferring…</div>`;
-    };
-    const stopThinking = () => scene.querySelectorAll(".spot").forEach((s) => s.classList.remove("thinking"));
-
-    async function ask(stage) {
-      deliberating();
-      try {
-        if (settings.mode !== "live") {
-          await wait(800);
-          return globalThis.gicScriptedTurn({ stage, item, profile, transcript });
-        }
-        const res = await chrome.runtime.sendMessage({ type: "judge", stage, item, profile, transcript });
-        if (res?.ok) return res.turn;
-        dock.innerHTML = `<div class="error">${esc(res?.error || "Something went wrong.")}</div>
-          <div class="row"><button class="btn btn-ghost" data-act="settings">Settings</button><button class="btn btn-ghost" data-act="buy">Just buy it</button></div>`;
-        dock.querySelector("[data-act=settings]").onclick = () => chrome.runtime.sendMessage({ type: "openOptions" });
-        dock.querySelector("[data-act=buy]").onclick = proceedWithPurchase;
-        return null;
-      } finally {
-        stopThinking();
-      }
-    }
-
-    function showDefenseInput() {
-      pips.forEach((p, i) => p.classList.toggle("on", i <= defenses));
-      const last = defenses === MAX_DEFENSES - 1;
-      dock.innerHTML = `
-        <div class="defense">
-          <textarea id="defense" rows="2" placeholder="${last ? "Closing argument. Make it count." : "Your defense. Put every reason up front."}"></textarea>
-          <button class="btn send" data-act="submit">${last ? "Rest my case" : "Object!"}</button>
-        </div>
-        <div class="row quiet">
-          <button class="link" data-act="plead">Plead guilty &amp; buy</button>
-          <span class="dot">·</span>
-          <button class="link" data-act="recess">Recess until tomorrow</button>
-        </div>`;
-      const box = shadow.getElementById("defense");
-      box.focus();
-      dock.querySelector("[data-act=submit]").onclick = () => submit(box.value.trim());
-      box.onkeydown = (e) => {
-        e.stopPropagation(); // keep Amazon's keyboard shortcuts out of it
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          submit(box.value.trim());
-        }
-      };
-      dock.querySelector("[data-act=plead]").onclick = () => {
-        logOutcome(item, "none", "pleaded guilty", transcript);
-        proceedWithPurchase();
-      };
-      dock.querySelector("[data-act=recess]").onclick = async () => {
-        await recess(item);
-        logOutcome(item, "none", "recessed", transcript);
-        clearUI();
-      };
-    }
-
-    async function submit(defense) {
-      if (!defense) return;
-      dock.innerHTML = "";
-      await play([{ speaker: "defendant", text: defense }]);
-      defenses += 1;
-      const stage = defenses >= MAX_DEFENSES ? "verdict" : "rebut";
-      const turn = await ask(stage);
-      if (!turn) return;
-      await play(turn.lines);
-      if (stage === "verdict") showVerdict(turn);
-      else showDefenseInput();
-    }
-
-    function showVerdict(turn) {
-      const label = globalThis.gicVerdictTitles?.[turn.verdict] || "Verdict";
-      scene.classList.add("ruled");
-      dock.innerHTML = `
-        <div class="verdict v-${esc(turn.verdict)}">
-          <div class="stamp">${esc(label)}</div>
-          ${turn.suggestion ? `<div class="verdict-tip">${esc(turn.suggestion)}</div>` : ""}
-        </div>
-        <div class="row">
-          ${
-            turn.verdict === "buy"
-              ? `<button class="btn" data-act="buy">Buy it</button>`
-              : `<button class="btn" data-act="follow">Take the judge's advice</button>
-                 <button class="btn btn-ghost" data-act="buy">Buy anyway</button>`
-          }
-        </div>
-        <div class="fine">Judge Penny's ruling is advice, not law. It's always your call.</div>`;
-      dock.querySelector("[data-act=follow]")?.addEventListener("click", () => {
-        logOutcome(item, turn.verdict, "kept", transcript);
-        clearUI();
-      });
-      dock.querySelector("[data-act=buy]").onclick = () => {
-        logOutcome(item, turn.verdict, "bought", transcript);
-        proceedWithPurchase();
-      };
-    }
-
-    // Opening statements
-    const opening = await ask("open");
-    if (!opening) return;
-    await play(opening.lines);
-    if (opening.skip_trial) {
-      scene.classList.add("ruled");
-      dock.innerHTML = `<div class="verdict v-buy"><div class="stamp">Case dismissed</div></div>
-        <div class="row" style="justify-content:center"><button class="btn" data-act="buy">Carry on</button></div>`;
-      dock.querySelector("[data-act=buy]").onclick = () => {
-        logOutcome(item, "buy", "necessity", transcript);
-        proceedWithPurchase();
-      };
-      return;
-    }
-    showDefenseInput();
+      <div class="card wish"><span class="thumb"></span><span>${esc(short)} is on your Money Makers wishlist.${by ? ` Revisit it after ${esc(by)}.` : ""}</span></div>
+      <button class="btn primary" data-act="done">Done</button>`;
+    if (style === "panel") showPanel(html);
+    else showPage(`<div class="card-lg">${html}</div>`, "centered");
+    on("[data-act=done]", clearUI);
+    on("[data-act=goal]", () => showGoalSheet(item, profile.saved + (item.total || 0), style));
   }
 
-  function budgetLine(item, profile) {
-    if (item.total == null || !profile.monthly_fun_budget) return "";
-    const pct = Math.round((item.total / profile.monthly_fun_budget) * 100);
-    return `<span class="exhibit-meta">${pct}% of your monthly fun budget</span>`;
+  // ---------- 16.1 Goal sheet ----------
+
+  function showGoalSheet(item, saved, style) {
+    const kinds = [
+      ["Trip", ICON.plane],
+      ["Safety net", ICON.shield],
+      ["Laptop", ICON.laptop],
+      ["Something else", ICON.plus],
+    ];
+    const html = `
+      <h2 class="h2">One more thing: What are you saving for?</h2>
+      <div class="chips">${kinds.map(([k, i], n) => `<button class="chip${n === 0 ? " on" : ""}" data-kind="${k}">${i}${k}</button>`).join("")}</div>
+      <div class="two">
+        <label>Name it<input id="gname" value="Spring break" /></label>
+        <label>Amount<input id="gamount" inputmode="decimal" placeholder="600" /></label>
+      </div>
+      <p class="blue center small" id="gpreview"></p>
+      <button class="btn primary" data-act="savegoal">Save my goal</button>
+      <button class="link" data-act="later">Skip. I'll do it in Settings</button>`;
+    if (style === "panel") showPanel(html);
+    else showPage(`<div class="card-lg">${html}</div>`, "centered");
+    const name = $("#gname");
+    const amount = $("#gamount");
+    for (const el of [name, amount]) el.addEventListener("keydown", (e) => e.stopPropagation());
+    const preview = () => {
+      const a = Number(amount.value);
+      $("#gpreview").textContent = a > 0 ? `${money(saved)} of ${money(a)} already done. That's ${Math.min(100, Math.round((saved / a) * 100))}%.` : "";
+    };
+    amount.addEventListener("input", preview);
+    for (const chip of layer.querySelectorAll("[data-kind]")) {
+      chip.onclick = () => {
+        layer.querySelectorAll("[data-kind]").forEach((c) => c.classList.toggle("on", c === chip));
+        const k = chip.dataset.kind;
+        name.value = k === "Trip" ? "Spring break" : k === "Something else" ? "" : k;
+        name.focus();
+      };
+    }
+    on("[data-act=later]", clearUI);
+    on("[data-act=savegoal]", async () => {
+      if (!name.value.trim() || !(Number(amount.value) > 0)) return amount.focus();
+      const { settings } = await getStore();
+      await chrome.storage.local.set({ settings: { ...settings, goalName: name.value.trim(), goalAmount: String(Number(amount.value)) } });
+      clearUI();
+    });
+  }
+
+  // ---------- 05-07 Courtroom ----------
+
+  async function courtTurn(stage, ctx, settings, onFallback) {
+    if (settings.mode === "openrouter" || settings.mode === "anthropic") {
+      try {
+        const res = await Promise.race([
+          chrome.runtime.sendMessage({ type: "court", stage, ctx }),
+          wait(LIVE_TIMEOUT_MS).then(() => ({ ok: false, error: "The AI took too long." })),
+        ]);
+        if (res?.ok) return res.turn;
+        throw new Error(res?.error || "No response");
+      } catch (e) {
+        log("Live court failed, using the script for this turn:", e.message);
+        onFallback?.(e.message);
+      }
+    } else {
+      await wait(650); // a beat so it doesn't feel instant
+    }
+    return globalThis.gicScripted(stage, ctx);
+  }
+
+  async function startTrial(item, settings, history) {
+    const profile = profileFrom(settings, history);
+    const short = globalThis.gicShortName(item.label);
+    const transcript = [];
+    const state = { answers: [], round: 1, totalRounds: flow.RULES.rounds, witnessCalled: false, witness: null };
+    let warned = false;
+
+    showPage(`
+      <div class="topbar"><span id="round"></span><button class="chip-btn" data-act="leave">Leave trial ${ICON.x}</button></div>
+      <div class="court-stage">
+        <div class="chat" role="log" aria-label="Courtroom">
+          <div class="chat-head"><span class="av judge">${ICON.scale}</span><span><b>The judge</b><small>Hearing your case for ${item.items.length > 1 ? "this cart" : `the ${esc(short)}`}</small></span></div>
+          <div class="log" id="log" aria-live="polite"></div>
+          <form class="composer" id="composer">
+            <input id="answer" autocomplete="off" placeholder="Make your case" disabled />
+            <button class="send" aria-label="Send" disabled>${ICON.send}</button>
+          </form>
+        </div>
+        <p class="fine">No right or wrong answers. The verdict is advice. You always decide.</p>
+      </div>`, "court");
+
+    const logEl = $("#log");
+    const input = $("#answer");
+    const send = $(".send");
+    const roundEl = $("#round");
+    const setRound = () => (roundEl.textContent = `Round ${state.round} of ${state.totalRounds}`);
+    setRound();
+
+    on("[data-act=leave]", () => {
+      logOutcome(item, "left", { where: "courtroom", transcript });
+      clearUI();
+    });
+
+    const scroll = () => (logEl.scrollTop = logEl.scrollHeight);
+    function say(role, text, opts = {}) {
+      transcript.push({ role, text });
+      const row = document.createElement("div");
+      if (role === "defendant") {
+        row.className = "msg me";
+        row.innerHTML = `<div class="bubble">${esc(text)}</div>`;
+      } else if (role === "witness") {
+        row.className = "msg witness";
+        row.innerHTML = `<span class="av gold">${ICON.witness}</span><div><div class="who">${esc(state.witness.name)} <span>· ${esc(state.witness.role)}</span></div><div class="bubble">${esc(text)}</div></div>`;
+      } else {
+        row.className = "msg judge";
+        row.innerHTML = `<span class="av judge">${ICON.scale}</span><div class="bubble${opts.question ? " q" : ""}">${esc(text)}</div>`;
+      }
+      logEl.appendChild(row);
+      scroll();
+    }
+    function moment(text) {
+      transcript.push({ role: "court", text });
+      const row = document.createElement("div");
+      row.className = "moment";
+      row.textContent = text;
+      logEl.appendChild(row);
+      scroll();
+    }
+    function typing(who = "judge") {
+      const row = document.createElement("div");
+      row.className = `msg ${who} typing`;
+      row.innerHTML = `<span class="av ${who === "witness" ? "gold" : "judge"}">${who === "witness" ? ICON.witness : ICON.scale}</span><div class="bubble"><i></i><i></i><i></i></div>`;
+      logEl.appendChild(row);
+      scroll();
+      return () => row.remove();
+    }
+    const readPause = (t) => wait(Math.min(1400, 350 + t.length * 12));
+    const fallbackNote = (err) => {
+      if (warned) return;
+      warned = true;
+      moment(`AI court unavailable (${err}). Using the scripted court for now.`);
+    };
+    const ctx = (extra = {}) => ({
+      item: { label: item.label, short, total: item.total, currency: item.currency, items: item.items, site: item.site },
+      profile,
+      transcript,
+      answers: state.answers,
+      round: state.round,
+      rounds_planned: state.totalRounds,
+      ...extra,
+    });
+    async function ask(stage, extra, who = "judge") {
+      const stop = typing(who);
+      try {
+        return await courtTurn(stage, ctx(extra), settings, fallbackNote);
+      } finally {
+        stop();
+      }
+    }
+    function openInput() {
+      input.disabled = send.disabled = false;
+      input.value = "";
+      input.focus();
+    }
+
+    // Opening
+    const open = await ask("open");
+    say("judge", open.opening);
+    await readPause(open.opening);
+    say("judge", open.question, { question: true });
+    openInput();
+
+    input.addEventListener("keydown", (e) => e.stopPropagation()); // keep the store's shortcuts out of it
+    $("#composer").onsubmit = async (e) => {
+      e.preventDefault();
+      const answer = input.value.trim();
+      if (!answer || input.disabled) return;
+      input.disabled = send.disabled = true;
+      input.value = "";
+      say("defendant", answer);
+
+      const r = await ask("answer", { answer, next_round: state.round + 1 });
+      state.answers.push({ text: answer, strength: r.strength, engaged: r.engaged !== false, claim: r.claim });
+      log("Answer scored", r.strength, r.claim, r.engaged ? "" : "(low effort)", "score", flow.score(state));
+      say("judge", r.acknowledge);
+      await readPause(r.acknowledge);
+
+      const step = flow.next(state);
+      if (step.action === "rule") {
+        moment(step.moment);
+        await wait(1200);
+        return deliberate(item, settings, history, profile, state, transcript, ctx);
+      }
+      if (step.action === "witness") {
+        moment(step.moment);
+        state.witnessCalled = true;
+        state.witness = flow.pickWitness(state);
+        await wait(600);
+        const w = await ask("witness", { witness: state.witness }, "witness");
+        say("witness", w.says);
+        await readPause(w.says);
+        state.round += 1;
+        setRound();
+        const q = await ask("after_witness", { witness: state.witness });
+        say("judge", q.question, { question: true });
+        return openInput();
+      }
+      if (step.action === "extend") {
+        moment(step.moment);
+        state.totalRounds += 1;
+      }
+      state.round += 1;
+      setRound();
+      say("judge", r.question, { question: true });
+      openInput();
+    };
+  }
+
+  // ---------- 08 Deliberating ----------
+
+  async function deliberate(item, settings, history, profile, state, transcript, ctx) {
+    const verdict = flow.verdict(state);
+    const n = state.answers.length;
+    const steps = [
+      [`Reviewing your ${n === 1 ? "answer" : `${n} answers`}`, `${n} answer${n === 1 ? "" : "s"} on the record`],
+      state.witnessCalled ? ["Considering the expert testimony", state.witness.name] : null,
+      ["Weighing need versus want", ""],
+      [profile.goal ? `Checking it against your ${profile.goal.name} goal` : "Checking it against your savings", ""],
+    ].filter(Boolean);
+    showPage(`
+      <div class="card-lg">
+        <div class="seal soft ring">${ICON.scale}</div>
+        <h2 class="h2 center">The court is deliberating…</h2>
+        <p class="muted center">Hang tight, this takes a few seconds.</p>
+        <ul class="checks">${steps.map(([t, s]) => `<li><span class="tick"></span><span><b>${esc(t)}</b>${s ? `<small>${esc(s)}</small>` : ""}</span></li>`).join("")}</ul>
+      </div>`, "centered");
+    const reasonP = courtTurn("verdict", ctx({ verdict }), settings);
+    const items = [...layer.querySelectorAll(".checks li")];
+    for (const li of items) {
+      li.classList.add("active");
+      await wait(700);
+      li.classList.replace("active", "done");
+    }
+    const { reason } = await reasonP;
+    transcript.push({ role: "judge", text: reason });
+    showVerdict(item, settings, history, profile, verdict, reason, transcript);
+  }
+
+  // ---------- 09 / 10 Verdict, plus recess ----------
+
+  function showVerdict(item, settings, history, profile, verdict, reason, transcript) {
+    const price = money(item.total, item.currency);
+    const V = {
+      save: { seal: `<div class="seal blue ring">${ICON.scale}</div>`, title: "Save it for later", box: "blue", primary: `Save ${price}`, secondary: "Appeal and buy anyway" },
+      approve: { seal: `<div class="seal green ring">${ICON.check}</div>`, title: "Case approved", box: "green", primary: "Continue to checkout", secondary: "Actually, save it instead" },
+      recess: { seal: `<div class="seal plain ring">${ICON.clock}</div>`, title: "Sleep on it", box: "plain", primary: "Recess until tomorrow", secondary: "Appeal and buy anyway" },
+    }[verdict];
+    showPage(`
+      <div class="card-lg">
+        ${V.seal}
+        <p class="kicker center">The court rules…</p>
+        <h2 class="h1 center">${V.title}</h2>
+        <div class="reason r-${V.box}">${esc(reason)}</div>
+        ${goalLine(profile)}
+        <button class="btn primary" data-act="primary">${esc(V.primary)}</button>
+        <button class="link" data-act="secondary">${esc(V.secondary)}</button>
+      </div>`, "centered");
+    $("[data-act=primary]").focus();
+    const record = { where: "courtroom", verdict, transcript };
+
+    on("[data-act=primary]", async () => {
+      if (verdict === "save") return saveIt(item, settings, history, "courtroom", "page", transcript);
+      if (verdict === "approve") {
+        await logOutcome(item, "approved", record);
+        return proceedWithPurchase();
+      }
+      const { recess } = await getStore();
+      recess[item.label] = Date.now() + DAY_MS;
+      await chrome.storage.local.set({ recess });
+      await logOutcome(item, "recessed", record);
+      pendingButton = null;
+      clearUI();
+    });
+    on("[data-act=secondary]", async () => {
+      if (verdict === "approve") return saveIt(item, settings, history, "courtroom", "page", transcript);
+      await logOutcome(item, "bought", record);
+      showTotallyOkay(profile);
+    });
+  }
+
+  // ---------- 12 Totally okay ----------
+
+  function showTotallyOkay(profile) {
+    showPage(`
+      <div class="card-lg">
+        <h2 class="h1">Totally okay. You thought it through.</h2>
+        <p class="muted">Buying things you want is part of the plan too. ${profile.goal ? "Your goal is right where you left it." : "Your savings are right where you left them."}</p>
+        ${goalLine(profile)}
+        <button class="btn primary" data-act="back">Back to checkout</button>
+        <p class="fine center">The trial closes and the store's checkout continues.</p>
+      </div>`, "centered");
+    on("[data-act=back]", proceedWithPurchase);
   }
 
   // ---------- triggers ----------
 
-  async function maybeSummon(note) {
+  async function maybeCheckIn() {
     if (isCleared()) {
-      log("Already went through court in the last 20 minutes. Letting it through.");
+      log("Already went through a check-in in this tab in the last 20 minutes. Letting it through.");
       return false;
     }
-    const { settings, recess } = await getStore();
-    if (!settings.onboarded) log("Settings never saved. Summoning anyway with an empty profile.");
+    const { settings, history, recess, neverItems } = await getStore();
     const item = scrapeItem();
     if (!item) {
       log("No item found on this page.", { page: pageType(), path: location.pathname });
       return false;
     }
-    const skip = shouldSkip(settings, item);
+    const skip = skipReason(settings, neverItems, item);
     if (skip) {
-      log(`Skipping: ${skip}.`, { total: item.total, skipUnder: settings.skipUnder, neverSites: settings.neverSites });
+      log(`Skipping: ${skip}.`);
       return false;
     }
-    log("Summoning for", item);
+    log("Checking in on", item);
     const until = recess[item.label];
-    const recessNote = until && until > Date.now() ? "You called a recess on this one. Ready to talk?" : "";
-    showSummon(item, recessNote || note);
+    showQuickCheck(item, settings, history, until && until > Date.now() ? "You called a recess on this one. Still want it?" : "");
     return true;
   }
 
-  // Intercept "buy" clicks (capture phase, before Amazon's handlers).
+  // Intercept "buy" clicks (capture phase, before the store's handlers).
   document.addEventListener(
     "click",
     async (e) => {
@@ -549,174 +746,219 @@
         allowNextClick = false;
         return;
       }
+      if (isCleared()) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       pendingButton = btn;
-      const shown = await maybeSummon("Caught you mid-checkout.");
-      if (!shown) proceedWithPurchase(); // nothing to judge, let it through
+      const shown = await maybeCheckIn();
+      if (!shown) proceedWithPurchase(); // nothing to check, let it through
     },
     true
   );
 
-  // On cart and checkout pages, summon without waiting for a click.
+  // On the cart page, check in without waiting for a click.
   log("Loaded on", pageType() || "an untracked page", location.pathname);
-  if (pageType() === "cart") {
-    setTimeout(() => maybeSummon(), 1200);
-  }
+  if (pageType() === "cart") setTimeout(maybeCheckIn, 1200);
 
-  // ---------- art ----------
+  // ---------- icons ----------
 
-  const GAVEL_SVG = `<svg viewBox="0 0 64 64" aria-hidden="true"><g transform="rotate(-35 32 32)"><rect x="14" y="14" width="28" height="14" rx="4" fill="#F5B83D" stroke="#1E1B3A" stroke-width="3"/><rect x="10" y="12" width="6" height="18" rx="2" fill="#FF6B5A" stroke="#1E1B3A" stroke-width="3"/><rect x="40" y="12" width="6" height="18" rx="2" fill="#FF6B5A" stroke="#1E1B3A" stroke-width="3"/><rect x="25" y="28" width="6" height="26" rx="3" fill="#8B5E3C" stroke="#1E1B3A" stroke-width="3"/></g><rect x="8" y="52" width="30" height="6" rx="3" fill="#1E1B3A"/></svg>`;
+  const svg = (body, extra = "") => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${body}</svg>`;
+  const ICON = {
+    scale: svg('<path d="M12 4v16M8 20h8M5 7h14M12 4l-1 3h2z"/><path d="M5 7l-3 6a3 3 0 0 0 6 0L5 7zM19 7l-3 6a3 3 0 0 0 6 0l-3-6z"/>'),
+    check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="2.4"'),
+    clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
+    dollar: svg('<path d="M12 3v18M16.5 7.5c-.8-1.3-2.4-2-4.5-2-2.6 0-4.3 1.3-4.3 3.2 0 4.6 9 2.4 9 7 0 2-1.9 3.3-4.6 3.3-2.3 0-4-.8-4.8-2.3"/>', 'stroke-width="2.2"'),
+    x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+    send: svg('<path d="M5 12h13M13 6l6 6-6 6"/>', 'stroke-width="2.2"'),
+    star: svg('<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/>'),
+    arrow: svg('<path d="M9 6l6 6-6 6"/>'),
+    flag: svg('<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>'),
+    plane: svg('<path d="M3 13l18-7-7 18-2.5-8.5z"/>'),
+    shield: svg('<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>'),
+    laptop: svg('<rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/>'),
+    plus: svg('<path d="M12 5v14M5 12h14"/>'),
+    witness: svg('<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/><path d="M15.5 14.8l1 2.2 2.3.3-1.7 1.6.4 2.3-2-1.1"/>'),
+  };
 
-  const JUDGE_SVG = `<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="32" fill="#FFE3B3"/><g fill="#fff" stroke="#1E1B3A" stroke-width="2"><circle cx="16" cy="26" r="7"/><circle cx="14" cy="38" r="7"/><circle cx="48" cy="26" r="7"/><circle cx="50" cy="38" r="7"/><path d="M14 22 Q32 2 50 22 Q32 14 14 22Z"/></g><circle cx="32" cy="32" r="13" fill="#F2C9A0" stroke="#1E1B3A" stroke-width="2"/><circle cx="27" cy="31" r="1.8" fill="#1E1B3A"/><circle cx="37" cy="31" r="1.8" fill="#1E1B3A"/><path d="M27 37 Q32 41 37 37" fill="none" stroke="#1E1B3A" stroke-width="2" stroke-linecap="round"/><path d="M22 27 l8 -1 M34 26 l8 1" stroke="#1E1B3A" stroke-width="2" stroke-linecap="round"/><path d="M20 64 Q32 46 44 64Z" fill="#1E1B3A"/></svg>`;
+  const CONFETTI = [
+    [8, 22, -20, "#224786"], [20, 6, 15, "#99B4A3"], [34, 30, 40, "#C19F7C"], [62, 10, -35, "#224786"],
+    [76, 28, 25, "#99B4A3"], [88, 8, -10, "#C6CCD3"], [92, 34, 50, "#C19F7C"], [14, 44, 30, "#C6CCD3"],
+    [70, 46, -25, "#224786"], [48, 4, 10, "#C6CCD3"],
+  ]
+    .map(([x, y, r, c]) => `<i style="left:${x}%;top:${y}px;transform:rotate(${r}deg);background:${c}"></i>`)
+    .join("");
 
-  const PROSECUTOR_SVG = `<svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" fill="#FFD9D3"/><path d="M12 64 Q32 40 52 64Z" fill="#2B2D42"/><path d="M28 50 L32 64 L36 50 L32 46Z" fill="#FF6B5A"/><path d="M26 46 L32 52 L38 46" fill="#fff"/><circle cx="32" cy="30" r="14" fill="#E8B48A" stroke="#1E1B3A" stroke-width="2"/><path d="M17 26 Q20 12 34 13 Q46 14 47 26 Q40 19 30 21 Q22 22 17 26Z" fill="#1E1B3A"/><circle cx="26" cy="30" r="4.5" fill="#fff" stroke="#1E1B3A" stroke-width="2"/><circle cx="38" cy="30" r="4.5" fill="#fff" stroke="#1E1B3A" stroke-width="2"/><path d="M30.5 30 h3" stroke="#1E1B3A" stroke-width="2"/><circle cx="26" cy="30" r="1.6" fill="#1E1B3A"/><circle cx="38" cy="30" r="1.6" fill="#1E1B3A"/><path d="M21 23 l7 2 M43 23 l-7 2" stroke="#1E1B3A" stroke-width="2.2" stroke-linecap="round"/><path d="M27 38 Q32 35 37 38" fill="none" stroke="#1E1B3A" stroke-width="2" stroke-linecap="round"/></svg>`;
-
-  const DEFENDANT_SVG = `<svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" fill="#DDE3FF"/><path d="M12 64 Q32 40 52 64Z" fill="#5B6CFF"/><circle cx="32" cy="30" r="14" fill="#F2C9A0" stroke="#1E1B3A" stroke-width="2"/><path d="M18 28 Q18 13 32 13 Q46 13 46 28 Q42 20 32 21 Q24 21 18 28Z" fill="#6B4A2E"/><circle cx="27" cy="31" r="1.8" fill="#1E1B3A"/><circle cx="37" cy="31" r="1.8" fill="#1E1B3A"/><path d="M27 37 Q32 40 37 36" fill="none" stroke="#1E1B3A" stroke-width="2" stroke-linecap="round"/><path d="M44 22 q4 3 2 7" fill="none" stroke="#8EC5FF" stroke-width="2.4" stroke-linecap="round"/></svg>`;
-
-  // ---------- styles ----------
+  // ---------- styles (tokens from the Figma design system, "sampled from the $100 bill") ----------
 
   function CSS() {
     return `
-      :host { all: initial; }
-      * { box-sizing: border-box; margin: 0; }
-      .dim, .dim * { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
-      button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
-      svg { display: block; width: 100%; height: 100%; }
+:host { all: initial; }
+* { box-sizing: border-box; }
+#layer {
+  --ink: #2B2F36; --seal: #62666F; --slate: #949AA5; --paper: #C6CCD3; --line: #DADADC;
+  --bill: #F4F5F7; --white: #FFFFFF;
+  --blue: #224786; --blue-tint: #E3E9F3;
+  --green: #99B4A3; --green-deep: #3E5E4B; --green-tint: #E3ECE6;
+  --gold: #C19F7C; --gold-deep: #7A5A3A; --gold-tint: #F3ECE4;
+  font-family: Urbanist, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 14px; line-height: 1.45; color: var(--ink); -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+input { font: inherit; color: var(--ink); }
+svg { width: 18px; height: 18px; flex: none; }
 
-      .dim { position: fixed; inset: 0; background: rgba(20, 18, 32, .45); display: grid; place-items: center; padding: 16px; animation: fade .15s ease-out; }
+/* ---- shells ---- */
+.panel-wrap { padding: 16px; }
+.panel {
+  position: relative; width: 360px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); overflow: auto;
+  background: var(--bill); border: 1px solid var(--line); border-radius: 18px; padding: 16px;
+  box-shadow: 0 18px 50px rgba(43,47,54,.18), 0 2px 6px rgba(43,47,54,.06);
+  display: flex; flex-direction: column; gap: 12px; animation: in .22s ease-out;
+}
+.page { position: fixed; inset: 0; background: var(--bill); overflow: auto; animation: fade .2s ease-out; }
+.page.centered { display: grid; place-items: center; padding: 24px 16px; }
+.card-lg {
+  position: relative; width: 420px; max-width: 100%; background: var(--white); border: 1px solid var(--line);
+  border-radius: 20px; padding: 28px 24px 22px; display: flex; flex-direction: column; gap: 14px; animation: in .25s ease-out;
+}
 
-      .btn { background: #1E1B3A; color: #fff; font-weight: 600; font-size: 14px; padding: 10px 16px; border-radius: 10px; transition: background .15s; }
-      .btn:hover { background: #2E2A52; }
-      .btn-ghost { background: #fff; color: #1E1B3A; border: 1px solid #D6D2E0; }
-      .btn-ghost:hover { background: #F6F4FA; }
-      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
-      .link { color: #77738C; font-size: 13px; }
-      .link:hover { color: #1E1B3A; text-decoration: underline; text-underline-offset: 3px; }
-      .quiet { justify-content: center; margin-top: 10px; }
-      .dot { color: #C9C5D6; }
+/* ---- type ---- */
+.h1 { margin: 0; font-size: 30px; line-height: 1.15; font-weight: 700; letter-spacing: -.01em; }
+.h2 { margin: 0; font-size: 22px; line-height: 1.2; font-weight: 700; }
+.kicker { margin: 0 0 -8px; font-size: 13px; font-weight: 600; color: var(--blue); }
+.muted { margin: 0; color: var(--seal); }
+.note { margin: 0; font-size: 13px; color: var(--seal); }
+.tiny { font-size: 12px; color: var(--seal); }
+.small { font-size: 13px; }
+.fine { margin: 0; font-size: 12px; color: var(--seal); }
+.center { text-align: center; }
+.blue { color: var(--blue); font-weight: 600; }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
-      /* summons */
-      .summons { position: relative; width: min(400px, 100%); background: #fff; color: #1E1B3A; text-align: center;
-        border-radius: 16px; padding: 28px 24px 18px; box-shadow: 0 20px 60px rgba(0,0,0,.25); animation: pop .2s ease-out; }
-      .summons-badge { width: 48px; height: 48px; margin: 0 auto 12px; padding: 10px; border-radius: 12px; background: #FDF1D8; }
-      .summons-kicker { font-size: 13px; color: #8A6A1F; font-weight: 600; }
-      .summons-title { font-size: 22px; font-weight: 700; line-height: 1.2; margin-top: 4px; }
-      .summons-sub { color: #77738C; margin-top: 6px; font-size: 14px; }
-      .summons-item { margin: 14px 0 2px; padding: 12px 14px; background: #F7F6F3; border-radius: 10px;
-        display: flex; gap: 10px; align-items: center; justify-content: space-between; text-align: left; }
-      .summons-item-name { font-weight: 500; font-size: 14px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-      .summons-item-price { font-weight: 700; font-size: 16px; white-space: nowrap; }
-      .summons-note { color: #A04A33; font-size: 13px; margin-top: 8px; }
-      .btn-big { display: block; width: 100%; margin-top: 16px; padding: 13px; font-size: 15px; }
-      .btn-hint { display: block; font-size: 12px; font-weight: 400; opacity: .65; margin-top: 2px; }
-      .skip { position: relative; overflow: hidden; margin-top: 12px; padding: 6px 12px; border-radius: 8px; font-size: 12px;
-        color: #9A97AC; opacity: 0; pointer-events: none; transition: opacity .5s; user-select: none; -webkit-user-select: none; touch-action: none; }
-      .skip.shown { opacity: 1; pointer-events: auto; }
-      .skip-fill { position: absolute; inset: 0; background: #EEECF4; transform: scaleX(0); transform-origin: left; }
-      .skip.holding .skip-fill { transform: scaleX(1); transition: transform ${SKIP_HOLD_MS}ms linear; }
-      .skip-label { position: relative; }
+/* ---- cards ---- */
+.card { background: var(--white); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--seal); padding: 2px 2px 0; }
+.icon-btn { border: 0; background: none; padding: 4px; border-radius: 8px; color: var(--seal); display: grid; }
+.icon-btn:hover { background: var(--white); color: var(--ink); }
+.amount { display: flex; align-items: baseline; gap: 6px; margin: 2px 0 8px; }
+.amount b { font-size: 34px; line-height: 1; font-weight: 700; color: var(--blue); letter-spacing: -.02em; }
+.amount span { color: var(--seal); font-size: 13px; }
+.bar { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--blue); border-radius: inherit; transition: width .6s ease-out; }
+.bar-foot { display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px; color: var(--seal); }
+.goal-line { display: flex; flex-direction: column; gap: 8px; font-weight: 600; font-size: 13px; }
+.hint { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--gold-deep); }
+.hint svg { width: 20px; height: 20px; padding: 3px; border-radius: 50%; background: var(--gold); color: var(--white); }
+.hint.box { background: var(--gold-tint); border-radius: 12px; padding: 12px 14px; }
+.wish { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--seal); background: var(--bill); }
+.thumb { width: 34px; height: 34px; border-radius: 8px; background: var(--line); flex: none; }
+.row-link { display: flex; align-items: center; gap: 12px; text-align: left; width: 100%; }
+.row-link span { flex: 1; display: flex; flex-direction: column; }
+.row-link small { color: var(--seal); font-size: 12px; }
+.row-link:hover { border-color: var(--paper); }
 
-      /* hearing */
-      .court { width: min(700px, 100%); max-height: 94vh; display: flex; flex-direction: column; overflow: hidden;
-        background: #fff; color: #1E1B3A; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.25); animation: pop .2s ease-out; }
-      .court-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #ECEAF1; }
-      .court-title { flex: 1; display: flex; flex-direction: column; }
-      .court-kicker { font-size: 12px; color: #77738C; }
-      .court-name { font-size: 16px; font-weight: 700; }
-      .pips { display: flex; gap: 5px; }
-      .pip { width: 8px; height: 8px; border-radius: 50%; background: #E2DFEA; }
-      .pip.on { background: #1E1B3A; }
-      .x { font-size: 22px; line-height: 1; color: #9A97AC; padding: 0 4px; }
-      .x:hover { color: #1E1B3A; }
+/* ---- buttons ---- */
+.stack { display: flex; flex-direction: column; gap: 8px; }
+.btn { width: 100%; border-radius: 10px; padding: 11px 16px; font-weight: 600; font-size: 15px; border: 1px solid transparent; }
+.btn.primary { background: var(--ink); color: var(--white); }
+.btn.primary:hover { background: #3a3f48; }
+.btn.outline { background: var(--white); border-color: var(--paper); }
+.btn.outline:hover { border-color: var(--seal); }
+.link { border: 0; background: none; padding: 4px; font-size: 13px; color: var(--seal); align-self: center; }
+.link:hover { color: var(--ink); text-decoration: underline; }
+.chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--paper); background: var(--white); border-radius: 99px; padding: 4px 11px; font-size: 13px; font-weight: 500; }
+.chip svg { width: 14px; height: 14px; }
+.chip.on { background: var(--blue-tint); border-color: var(--blue); color: var(--blue); }
+.chip.gold { background: var(--gold-tint); border-color: transparent; color: var(--gold-deep); padding: 2px 9px; font-size: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn:focus-visible, .link:focus-visible, .chip:focus-visible, .chip-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
-      /* the scene */
-      .scene { position: relative; height: 240px; flex: none; overflow: hidden; background: linear-gradient(#F4EFE6 0 60%, #E7DCCB 60% 100%); }
-      .wall { display: none; }
-      .seal { display: none; }
-      .spot { position: absolute; display: flex; flex-direction: column; align-items: center; z-index: 1; transition: opacity .2s; }
-      .char { width: 64px; height: 64px; border-radius: 50%; overflow: hidden; background: #FFE3B3; border: 2px solid #fff;
-        box-shadow: 0 1px 3px rgba(0,0,0,.15); transition: box-shadow .2s; }
-      .desk { margin-top: -6px; padding: 10px 12px 6px; min-width: 116px; text-align: center; border-radius: 6px 6px 2px 2px;
-        background: #7A5638; color: #F4EFE6; font-size: 11px; font-weight: 600; }
-      .desk span { opacity: .9; }
-      .bench { left: 50%; top: 40px; transform: translateX(-50%); }
-      .bench .char { width: 60px; height: 60px; }
-      .desk-bench { min-width: 180px; background: #63432A; }
-      .left { left: 5%; bottom: 14px; }
-      .right { right: 5%; bottom: 14px; }
-      .right .char { background: #DDE3FF; }
-      .left .char { background: #FFD9D3; }
-      .spot.talking .char { box-shadow: 0 0 0 3px #E2A93B; }
-      .spot.thinking .char { animation: think 1.4s ease-in-out infinite; }
-      .scene .spot:not(.talking) { opacity: .8; }
-      .exhibit { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 1;
-        width: min(220px, 32%); padding: 8px 10px; background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12);
-        display: flex; flex-direction: column; gap: 2px; }
-      .exhibit-tag { font-size: 11px; font-weight: 600; color: #8A6A1F; }
-      .exhibit-title { font-weight: 500; font-size: 12px; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-      .exhibit-price { font-weight: 700; font-size: 15px; }
-      .exhibit-meta { font-size: 11px; color: #77738C; }
+/* ---- forms ---- */
+.two { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--seal); }
+label input { border: 1px solid var(--paper); border-radius: 10px; padding: 9px 11px; background: var(--white); outline: none; font-size: 14px; }
+label input:focus { border-color: var(--blue); }
 
-      .speech { position: absolute; z-index: 3; max-width: 290px; padding: 9px 12px; font-size: 13.5px; line-height: 1.4;
-        background: #fff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.14); animation: bubble .18s ease-out; }
-      .speech b { display: block; font-size: 11px; font-weight: 600; color: #8A6A1F; margin-bottom: 2px; }
-      .speech::after { content: ""; position: absolute; width: 12px; height: 12px; background: inherit; transform: rotate(45deg); }
-      .speech.at-judge { top: 12px; left: calc(50% + 62px); }
-      .speech.at-judge::after { left: -5px; top: 20px; }
-      .speech.at-prosecutor { bottom: 104px; left: 3%; }
-      .speech.at-prosecutor::after { left: 28px; bottom: -5px; }
-      .speech.at-defendant { bottom: 104px; right: 3%; background: #1E1B3A; color: #fff; }
-      .speech.at-defendant b { color: #C9C5E8; }
-      .speech.at-defendant::after { right: 28px; bottom: -5px; }
+/* ---- seals ---- */
+.seal { width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center; align-self: center; position: relative; }
+.seal svg { width: 26px; height: 26px; }
+.seal.blue { background: var(--blue); color: var(--white); }
+.seal.green { background: var(--green); color: var(--green-deep); }
+.seal.soft { background: var(--blue-tint); color: var(--blue); }
+.seal.plain { background: var(--bill); color: var(--ink); border: 1px solid var(--line); }
+.seal.ring::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; border: 1.5px dashed currentColor; opacity: .5; }
+.seal.blue.ring::after { border-color: var(--blue); }
+.seal.green.ring::after { border-color: var(--green-deep); }
+.confetti { position: absolute; inset: 0 0 auto; height: 60px; pointer-events: none; }
+.confetti i { position: absolute; width: 7px; height: 11px; border-radius: 2px; opacity: .85; }
 
-      /* chat log */
-      .log { flex: 1; min-height: 110px; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid #ECEAF1; }
-      .msg { display: flex; gap: 8px; align-items: flex-start; animation: rise .2s ease-out; }
-      .msg.defendant { flex-direction: row-reverse; }
-      .msg .avatar { width: 28px; height: 28px; flex: none; border-radius: 50%; overflow: hidden; background: #FFE3B3; }
-      .msg.prosecutor .avatar { background: #FFD9D3; }
-      .msg.defendant .avatar { background: #DDE3FF; }
-      .msg-body { max-width: 78%; display: flex; flex-direction: column; }
-      .msg.defendant .msg-body { align-items: flex-end; }
-      .who { font-size: 12px; font-weight: 600; color: #77738C; margin: 0 2px 2px; }
-      .bubble { padding: 8px 12px; border-radius: 12px; font-size: 14px; line-height: 1.45; background: #F4F3F7; }
-      .defendant .bubble { background: #1E1B3A; color: #fff; }
+/* ---- verdict ---- */
+.reason { border-radius: 12px; padding: 12px 14px; font-size: 14px; }
+.reason.r-blue { background: var(--blue-tint); }
+.reason.r-green { background: var(--green-tint); }
+.reason.r-plain { background: var(--bill); border: 1px solid var(--line); }
 
-      .dock { padding: 12px 16px 14px; border-top: 1px solid #ECEAF1; min-height: 58px; }
-      .defense { display: flex; gap: 8px; align-items: flex-end; }
-      textarea { flex: 1; font: inherit; font-size: 14px; padding: 10px 12px; border: 1px solid #D6D2E0; border-radius: 10px;
-        background: #fff; color: #1E1B3A; resize: none; outline: none; }
-      textarea:focus { border-color: #1E1B3A; }
-      .send { white-space: nowrap; }
-      .typing { display: flex; align-items: center; gap: 4px; color: #77738C; font-size: 13px; }
-      .typing span { width: 5px; height: 5px; border-radius: 50%; background: #9A97AC; animation: blink 1s infinite; }
-      .typing span:nth-child(2) { animation-delay: .15s; } .typing span:nth-child(3) { animation-delay: .3s; margin-right: 6px; }
-      .error { color: #A04A33; font-size: 14px; }
+/* ---- deliberating ---- */
+.checks { list-style: none; margin: 4px 0 6px; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.checks li { display: flex; gap: 10px; align-items: flex-start; color: var(--slate); }
+.checks li > span:last-child { display: flex; flex-direction: column; }
+.checks li b { font-weight: 600; }
+.checks li small { font-size: 12px; color: var(--seal); }
+.tick { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--paper); flex: none; margin-top: 1px; position: relative; }
+.checks li.active { color: var(--ink); }
+.checks li.active .tick { border: 1.5px dashed var(--blue); animation: spin 1.6s linear infinite; }
+.checks li.done { color: var(--ink); }
+.checks li.done .tick { background: var(--blue); border-color: var(--blue); }
+.checks li.done .tick::after { content: ""; position: absolute; left: 5px; top: 2px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
 
-      .verdict { text-align: center; }
-      .stamp { display: inline-block; font-weight: 700; font-size: 15px; padding: 6px 14px; border-radius: 999px; }
-      .v-buy .stamp { color: #17734F; background: #E3F4EC; } .v-wait .stamp { color: #8A5B0B; background: #FBF0D9; } .v-skip .stamp { color: #A23B2A; background: #FBE6E2; }
-      .verdict-tip { margin-top: 10px; font-size: 14px; color: #3D3A55; }
-      .verdict + .row { justify-content: center; }
-      .fine { margin-top: 10px; font-size: 12px; color: #9A97AC; text-align: center; }
+/* ---- courtroom ---- */
+.court { display: flex; flex-direction: column; }
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; font-size: 14px; color: var(--seal); }
+.chip-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--paper); background: var(--white); border-radius: 10px; padding: 7px 12px; font-weight: 600; font-size: 13px; color: var(--ink); }
+.chip-btn svg { width: 14px; height: 14px; }
+.chip-btn:hover { border-color: var(--seal); }
+.court-stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 8px 16px 28px; }
+.chat {
+  width: 660px; max-width: 100%; height: min(600px, calc(100vh - 130px)); display: flex; flex-direction: column;
+  background: var(--white); border: 1px solid var(--line); border-radius: 20px; overflow: hidden;
+}
+.chat-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.chat-head b { display: block; font-size: 16px; }
+.chat-head small { display: block; font-size: 12px; color: var(--seal); }
+.av { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+.av svg { width: 17px; height: 17px; }
+.av.judge { background: var(--blue-tint); color: var(--blue); }
+.av.gold { background: var(--gold-tint); color: var(--gold-deep); }
+.log { flex: 1; overflow-y: auto; padding: 20px 16px 12px; display: flex; flex-direction: column; gap: 10px; }
+.log > :first-child { margin-top: auto; }
+.msg { display: flex; gap: 10px; align-items: flex-end; max-width: 78%; animation: rise .2s ease-out; }
+.msg .bubble { padding: 9px 14px; border-radius: 14px; font-size: 15px; line-height: 1.4; }
+.msg.judge .bubble { background: var(--blue-tint); border-bottom-left-radius: 4px; }
+.msg.judge .bubble.q { font-weight: 700; }
+.msg.me { align-self: flex-end; }
+.msg.me .bubble { background: var(--ink); color: var(--white); border-bottom-right-radius: 4px; }
+.msg.witness .who { font-size: 12px; font-weight: 700; color: var(--gold-deep); margin: 0 0 3px 2px; }
+.msg.witness .who span { font-weight: 500; }
+.msg.witness .bubble { background: var(--gold-tint); border-bottom-left-radius: 4px; }
+.moment { align-self: center; text-align: center; max-width: 80%; font-size: 12px; font-weight: 600; color: var(--seal); padding: 6px 4px; animation: fade .3s ease-out; }
+.typing .bubble { display: flex; gap: 4px; padding: 13px 14px; }
+.typing .bubble i { width: 6px; height: 6px; border-radius: 50%; background: var(--slate); animation: blink 1s infinite; }
+.typing .bubble i:nth-child(2) { animation-delay: .15s; }
+.typing .bubble i:nth-child(3) { animation-delay: .3s; }
+.composer { display: flex; gap: 10px; padding: 12px 14px 14px; border-top: 1px solid var(--line); }
+.composer input { flex: 1; border: 1.5px solid var(--paper); border-radius: 12px; padding: 11px 14px; font-size: 15px; outline: none; background: var(--white); }
+.composer input:focus { border-color: var(--blue); }
+.composer input:disabled { background: var(--bill); }
+.send { width: 44px; border: 0; border-radius: 12px; background: var(--ink); color: var(--white); display: grid; place-items: center; }
+.send:disabled { opacity: .35; cursor: default; }
 
-      @media (max-width: 560px) {
-        .scene { height: 210px; }
-        .char { width: 50px; height: 50px; } .bench .char { width: 46px; height: 46px; }
-        .desk { min-width: 88px; font-size: 10px; } .desk-bench { min-width: 120px; }
-        .exhibit { display: none; }
-        .speech { max-width: 70%; font-size: 13px; }
-        .speech.at-judge { left: auto; right: 3%; }
-      }
-
-      @keyframes fade { from { opacity: 0; } }
-      @keyframes pop { from { transform: translateY(8px); opacity: 0; } }
-      @keyframes rise { from { transform: translateY(4px); opacity: 0; } }
-      @keyframes bubble { from { opacity: 0; transform: translateY(4px); } }
-      @keyframes think { 0%, 100% { opacity: 1; } 50% { opacity: .6; } }
-      @keyframes blink { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
-      @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
-    `;
+@keyframes in { from { opacity: 0; transform: translateY(6px); } }
+@keyframes rise { from { opacity: 0; transform: translateY(4px); } }
+@keyframes fade { from { opacity: 0; } }
+@keyframes blink { 50% { opacity: .3; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { *, *::after { animation: none !important; transition: none !important; } }
+@media (max-width: 520px) { .msg { max-width: 90%; } .h1 { font-size: 26px; } }
+`;
   }
 })();

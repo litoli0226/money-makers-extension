@@ -1,0 +1,63 @@
+/* Shared styles for the settings page and toolbar popup.
+   Tokens from the Figma design system ("sampled from the $100 bill", type: Urbanist). */
+@import url("https://fonts.googleapis.com/css2?family=Urbanist:wght@400..700&display=swap");
+
+:root {
+  --ink: #2b2f36; --seal: #62666f; --slate: #949aa5; --paper: #c6ccd3; --line: #dadadc;
+  --bill: #f4f5f7; --white: #ffffff;
+  --blue: #224786; --blue-tint: #e3e9f3;
+  --green: #99b4a3; --green-deep: #3e5e4b; --green-tint: #e3ece6;
+  --gold: #c19f7c; --gold-deep: #7a5a3a; --gold-tint: #f3ece4;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bill); color: var(--ink);
+  font: 14px/1.45 Urbanist, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+svg { width: 16px; height: 16px; flex: none; }
+
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
+.brand img { width: 30px; height: 30px; border-radius: 8px; }
+
+.card { background: var(--white); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+h1 { margin: 0; font-size: 20px; font-weight: 700; }
+h2 { margin: 0; font-size: 17px; font-weight: 700; }
+.muted { color: var(--seal); }
+.tiny { font-size: 12px; color: var(--seal); }
+.blue { color: var(--blue); font-weight: 600; }
+
+label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--seal); }
+input, select, textarea {
+  width: 100%; border: 1px solid var(--paper); border-radius: 10px; padding: 9px 11px; background: var(--white);
+  outline: none; font-size: 14px; font-weight: 500; color: var(--ink);
+}
+input:focus, select:focus, textarea:focus { border-color: var(--blue); }
+
+.btn { border-radius: 10px; padding: 9px 16px; font-weight: 600; border: 1px solid transparent; }
+.btn.primary { background: var(--ink); color: var(--white); }
+.btn.primary:hover { background: #3a3f48; }
+.btn.ghost { background: var(--white); border-color: var(--paper); }
+.btn.ghost:hover { border-color: var(--seal); }
+.link { border: 0; background: none; padding: 4px 2px; color: var(--seal); font-size: 13px; }
+.link:hover { color: var(--ink); text-decoration: underline; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--paper); background: var(--white);
+  border-radius: 99px; padding: 5px 12px; font-size: 13px; font-weight: 600;
+}
+.chip svg { width: 13px; height: 13px; display: none; }
+.chip.on { background: var(--ink); border-color: var(--ink); color: var(--white); }
+.chip.on svg { display: block; }
+
+.bar { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--blue); border-radius: inherit; }
+
+.tag { flex: none; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 99px; background: var(--bill); color: var(--seal); }
+.tag.blue { background: var(--blue-tint); color: var(--blue); }
+.tag.green { background: var(--green-tint); color: var(--green-deep); }
+
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }

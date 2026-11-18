@@ -2,46 +2,50 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <link rel="stylesheet" href="ui.css" />
   <style>
-    body { margin: 0; width: 320px; background: #fff; color: #1e1b3a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
-    header { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid #eceaf1; }
-    header img { width: 34px; height: 34px; border-radius: 50%; background: #ffe3b3; }
-    header b { font-size: 14px; display: block; }
-    header span { font-size: 12px; color: #77738c; }
-    .stat { margin: 14px 16px 0; padding: 14px; background: #f7f6f3; border-radius: 10px; }
-    .big { font-size: 26px; font-weight: 700; }
-    .sub { color: #77738c; font-size: 13px; }
-    h3 { margin: 16px 16px 4px; font-size: 12px; font-weight: 600; color: #77738c; }
-    ul { list-style: none; padding: 0; margin: 0 16px; font-size: 13px; }
-    li { padding: 8px 0; border-top: 1px solid #eceaf1; display: flex; justify-content: space-between; gap: 8px; cursor: pointer; }
-    li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    li:hover span:first-child { text-decoration: underline; }
-    .tag { flex: none; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #f0eef5; color: #55516b; }
-    .tag.kept { background: #e3f4ec; color: #17734f; }
-    .empty { color: #77738c; font-size: 13px; padding: 8px 0; cursor: default; }
-    .tx { display: none; margin: 4px 16px 0; padding: 10px; background: #f7f6f3; border-radius: 10px; font-size: 12px; line-height: 1.45; max-height: 220px; overflow-y: auto; }
+    body { width: 440px; padding: 16px; background: var(--white); display: flex; flex-direction: column; gap: 12px; }
+    header { display: flex; align-items: center; justify-content: space-between; }
+    .grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 10px; }
+    .goal { display: flex; flex-direction: column; gap: 6px; }
+    .goal b { font-size: 22px; line-height: 1.15; }
+    .goal .foot { display: flex; justify-content: space-between; font-size: 12px; }
+    .stats { display: flex; flex-direction: column; gap: 10px; }
+    .stats .card { padding: 10px 14px; }
+    .stats b { display: block; font-size: 22px; line-height: 1.2; }
+    h3 { margin: 6px 0 0; font-size: 15px; }
+    ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+    li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); cursor: pointer; }
+    li:first-child { border-top: 0; }
+    li:hover { background: var(--bill); }
+    li .ic { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--blue); color: var(--white); }
+    li .ic.green { background: var(--green); color: var(--green-deep); }
+    li .ic.plain { background: var(--bill); color: var(--seal); }
+    li .t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    li .t b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    li.empty { cursor: default; color: var(--seal); }
+    li.empty:hover { background: none; }
+    .tx { display: none; border: 1px solid var(--line); border-radius: 14px; padding: 12px; font-size: 13px; max-height: 240px; overflow-y: auto; }
     .tx.open { display: block; }
     .tx p { margin: 0 0 6px; }
-    .tx b { font-weight: 600; }
-    .tx button { font: inherit; font-size: 12px; margin-top: 4px; padding: 4px 10px; border-radius: 6px; border: 1px solid #d6d2e0; background: #fff; cursor: pointer; }
-    footer { padding: 14px 16px; font-size: 13px; color: #c9c5d6; }
-    a { color: #55516b; font-size: 13px; text-decoration: none; }
-    a:hover { color: #1e1b3a; text-decoration: underline; }
+    .tx .court { color: var(--seal); font-size: 12px; font-weight: 600; text-align: center; }
   </style>
 </head>
 <body>
   <header>
-    <img src="judge.svg" alt="" />
-    <div><b>Judge Penny</b><span>Guilty if Charged</span></div>
+    <div class="brand"><img src="icons/logo.svg" alt="" />Money Makers</div>
+    <button class="btn ghost" id="settings">Settings</button>
   </header>
-  <div class="stat">
-    <div class="big" id="kept">$0</div>
-    <div class="sub" id="summary">kept so far</div>
+  <div class="grid">
+    <div class="card goal" id="goal"></div>
+    <div class="stats">
+      <div class="card"><span class="tiny">Saved this month</span><b id="month">$0</b></div>
+      <div class="card"><span class="tiny">Cases heard</span><b id="cases">0</b></div>
+    </div>
   </div>
-  <h3>Recent hearings</h3>
-  <ul id="history"><li class="empty">No hearings yet. Go shop!</li></ul>
+  <h3>Recent cases</h3>
+  <ul id="history"><li class="empty">No cases yet. They'll show up here after your next checkout.</li></ul>
   <div class="tx" id="tx"></div>
-  <footer><a href="#" id="settings">Settings</a> · <a href="#" id="clear">Clear history</a></footer>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -1,49 +1,68 @@
+// Settings page. Every change saves right away.
 const form = document.getElementById("form");
 const status = document.getElementById("status");
-const cutBack = form.elements.cutBack;
+const DEFAULT_SKIPS = ["groceries", "textbooks", "medicine"];
+let skips = DEFAULT_SKIPS;
 
-function showPurpose() {
-  const purpose = form.elements.purpose.value;
-  for (const el of document.querySelectorAll(".purpose-fields")) el.hidden = el.dataset.purpose !== purpose;
+function flash(msg) {
+  status.textContent = msg;
+  clearTimeout(flash.t);
+  flash.t = setTimeout(() => (status.textContent = ""), 2500);
+}
+
+function showMode() {
+  const mode = form.elements.mode.value;
+  for (const el of document.querySelectorAll(".mode-fields")) el.hidden = el.dataset.mode !== mode;
 }
 
 function syncChips() {
-  const picked = cutBack.value.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-  for (const chip of document.querySelectorAll(".chip")) chip.classList.toggle("on", picked.includes(chip.textContent));
+  for (const chip of document.querySelectorAll("[data-skip]")) chip.classList.toggle("on", skips.includes(chip.dataset.skip));
 }
 
-for (const radio of form.elements.purpose) radio.addEventListener("change", showPurpose);
-cutBack.addEventListener("input", syncChips);
-document.getElementById("chips").addEventListener("click", (e) => {
-  const chip = e.target.closest(".chip");
-  if (!chip) return;
-  let picked = cutBack.value.split(",").map((s) => s.trim()).filter(Boolean);
-  picked = picked.includes(chip.textContent) ? picked.filter((p) => p !== chip.textContent) : [...picked, chip.textContent];
-  cutBack.value = picked.join(", ");
-  syncChips();
-});
+async function save(msg = "Saved") {
+  const { settings = {} } = await chrome.storage.local.get("settings");
+  const data = Object.fromEntries(new FormData(form));
+  await chrome.storage.local.set({ settings: { ...settings, ...data, skipCategories: skips } });
+  flash(msg);
+}
 
 chrome.storage.local.get({ settings: {} }).then(({ settings }) => {
+  if (settings.mode === "live") settings.mode = "openrouter"; // older builds
   for (const el of form.elements) {
-    if (!el.name || settings[el.name] == null) continue;
-    if (el.type === "radio") el.checked = el.value === settings[el.name];
-    else el.value = Array.isArray(settings[el.name]) ? settings[el.name].join(", ") : settings[el.name];
+    if (el.name && settings[el.name] != null) el.value = settings[el.name];
   }
-  showPurpose();
+  skips = settings.skipCategories || DEFAULT_SKIPS;
+  if (settings.mode && settings.mode !== "scripted") document.getElementById("dev").open = true;
+  showMode();
   syncChips();
 });
 
-document.getElementById("reset").addEventListener("click", async () => {
-  await chrome.storage.local.set({ history: [], recess: {} });
-  document.getElementById("resetStatus").textContent = "History cleared.";
+let timer;
+form.addEventListener("input", () => {
+  clearTimeout(timer);
+  timer = setTimeout(save, 500);
+});
+form.elements.mode.addEventListener("change", () => {
+  showMode();
+  save();
 });
 
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const data = Object.fromEntries(new FormData(form));
-  data.neverSites = data.neverSites.split(",").map((s) => s.trim()).filter(Boolean);
-  data.onboarded = true;
-  await chrome.storage.local.set({ settings: data });
-  status.textContent = "Saved.";
-  setTimeout(() => (status.textContent = ""), 3000);
+document.getElementById("chips").addEventListener("click", (e) => {
+  const chip = e.target.closest("[data-skip]");
+  if (!chip) return;
+  const k = chip.dataset.skip;
+  skips = skips.includes(k) ? skips.filter((s) => s !== k) : [...skips, k];
+  syncChips();
+  save();
 });
+
+document.getElementById("updateGoal").onclick = () => save("Goal updated");
+document.getElementById("removeGoal").onclick = () => {
+  for (const n of ["goalName", "goalAmount", "goalDate"]) form.elements[n].value = "";
+  save("Goal removed. Skips still add up.");
+};
+
+document.getElementById("reset").onclick = async () => {
+  await chrome.storage.local.set({ history: [], recess: {}, wishlist: [], neverItems: [] });
+  flash("History cleared");
+};

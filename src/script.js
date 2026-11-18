@@ -1,197 +1,200 @@
-// Scripted hearing: no AI. Two characters, Judge Penny and Prosecutor Pinch,
-// built from canned lines plus what we scraped and the user's settings.
-// Returns the same shape as the live hearing in background.js:
-//   { lines: [{ speaker: "prosecutor" | "judge", text }], skip_trial, verdict, suggestion }
+// Scripted court: no AI, free. Same five stages as the live court in
+// background.js, built from canned lines plus what we scraped from the page.
 //
-// Tone: playful, never guilt-trippy. Writers: all copy lives in LINES. Edit freely.
+//   open          -> { opening, question }
+//   answer        -> { acknowledge, strength, engaged, claim, question }
+//   witness       -> { says }
+//   after_witness -> { question }
+//   verdict       -> { reason }
+//
+// The rules for rounds, the witness and recess are in src/flow.js.
+// Writers: all copy is in LINES and QUESTIONS below. Edit freely.
 
 (() => {
   const LINES = {
-    // ---- opening ----
-    dismissProsecutor: (f) => `Your Honor, the prosecution has reviewed the evidence. It's ${f.short}. We… have no case.`,
-    dismissJudge: () => `Case dismissed! Taking care of yourself isn't a crime. Carry on, and take care.`,
-    charges: (f) =>
-      `Your Honor, the defendant stands accused of putting ${f.short} (${f.price}) in their cart${f.late ? ` at ${f.time}` : ""}.${f.context} The prosecution smells an impulse buy.`,
-    chargesCheap: (f) => `Your Honor, ${f.short}, ${f.price}. Small, sure. But small buys add up, and I intend to prove it.`,
-    judgeOpen: (f) =>
+    opening: (f) =>
       f.late
-        ? `It's ${f.time}, counselor. Nothing great gets bought after midnight. Defendant, tell the court why this can't wait.`
-        : `Order in the cart! Defendant, you've heard the charges. Why do you need ${f.short}?`,
+        ? `Order in the court. It's ${f.time}, which the court notes is a bold hour to shop. Let's hear your case for ${f.the}.`
+        : `Order in the court. Let's hear your case for ${f.the}.`,
 
-    // ---- cross-examination (one line from the prosecutor, quoting the defense) ----
-    cross: {
+    // The judge's reaction to each answer, by what kind of argument it was.
+    acknowledge: {
       need: (f) =>
-        f.cheap
-          ? `"${f.quote}" Fair enough. Last question: is this the best price, or would the pharmacy down the street do it cheaper?`
-          : `"${f.quote}" A real need, I'll grant that. But does it have to be ${f.short}? Is there a cheaper version that does the same job?`,
-      sale: () => `Objection! "It's on sale" isn't a reason, it's a marketing strategy. Would you still buy it at full price?`,
-      deserve: (f) => `The defendant admits it's a reward. Rewards are lovely!${f.pctLine} Is there a cheaper treat that would hit the same spot?`,
-      learn: (f) => `"${f.quote}" Admirable! But do you need ${f.short} to start, or could you try a cheaper or rented one first and upgrade once you're hooked?`,
-      gift: () => `Generous! But did they actually ask for this, or is it what you'd want?`,
-      want: (f) => `"${f.quote}" Wanting isn't a crime. It's not a defense either. Will you still be using ${f.short} a month from now?`,
-      vague: (f) => `Objection, vague! "${f.quote}" doesn't tell us why ${f.short} has to happen today.${f.ruleQuote}${f.focusQuote}`,
+        /broke|broken|stopped working/.test(f.lastLower)
+          ? "A broken one is a fair reason. Noted."
+          : /ran out|run out|running out/.test(f.lastLower)
+            ? "Running out is a fair reason. Noted."
+            : "A genuine need. The court takes note.",
+      usage: () => "Regular use counts for a lot in this court.",
+      price: () => "A discount is a fair point. The court has also seen many \"deals\" come back next week.",
+      learn: () => "Self-improvement. The court admires your ambition, if not yet your cart.",
+      gift: () => "Generosity is admissible. The court will allow it, for now.",
+      treat: () => "The court has had weeks like that too. Noted, sympathetically.",
+      want: () => "Honest. The court appreciates honesty and will hold it against you only slightly.",
+      vague: () => "The court will need a little more than that.",
+      lowEffort: () => "Brevity is the soul of wit, counselor, but not of a defense.",
     },
 
-    // ---- closing + verdict ----
-    closing: {
-      buy: () => `The prosecution rests. Honestly? They got me.`,
-      wait: () => `The prosecution rests, and asks the court for a cooling-off period.`,
-      skip: () => `The prosecution rests. I think the facts speak for themselves, Your Honor.`,
+    witness: {
+      price: () =>
+        "Price analyst, under oath. Sales like this one tend to come back around. Waiting a couple of weeks rarely costs more than a few dollars, and sometimes saves more.",
+      usage: (f) =>
+        f.total != null
+          ? `Cost-per-use analyst, under oath. At ${f.price}, using it three times a week for a year works out to about ${f.perUse} a use. Use it less and that number climbs fast.`
+          : "Cost-per-use analyst, under oath. The real price of anything is what it costs each time you use it. Use it often and it's a bargain. Use it twice and it's a souvenir.",
+      future: (f) =>
+        `Hi, it's you, one month from now. If you skip this, I'm ${f.price} ${f.goal ? `closer to ${f.goal}` : "richer"}. Honestly? I don't remember wanting it this much.`,
     },
-    verdictTitle: { buy: "Approved!", wait: "Sleep on it", skip: "Overruled" },
-    verdict: {
-      buy: (f) => `The court finds the defense convincing.${f.strongQuote ? ` "${f.strongQuote}" carried the day.` : ""} ${f.short} is approved!`,
-      wait: (f) => `Both sides made fair points. The court orders a short cooling-off period for ${f.short}.`,
-      skip: (f) => `The court isn't convinced ${f.short} is worth ${f.price} right now.${f.winLine}`,
+    afterWitness: {
+      price: () => "Thank you, witness. Defendant, could you wait two weeks and see if the price holds?",
+      usage: () => "Thank you, witness. Defendant, how often will you really use it? Be honest, the witness is watching.",
+      future: () => "Thank you, witness. Defendant, anything you'd like to say to your future self?",
+    },
+
+    reason: {
+      save: (f) =>
+        `${f.mostlyWant ? "Your case sounded more like a want than a need right now." : "Your case had a point, but not enough to outweigh the cost right now."}${
+          f.goal && f.pctOfLeft != null ? ` ${f.price} covers ${f.pctOfLeft}% of what's left for ${f.goal}.` : ` That's ${f.price} straight into your savings.`
+        }`,
+      approve: (f) =>
+        `${f.bestQuote ? `You said "${f.bestQuote}" and backed it up.` : "You made your case and backed it up."} That's a solid case.${f.goal ? ` ${f.goal} stays on track.` : ""}`,
+      recess: (f) =>
+        `Your case is reasonable, but not convincing yet. Sleep on it. If you still want ${f.it} tomorrow, the court will hear you again.`,
     },
   };
 
-  // Health and household basics. Cheap ones get dismissed at the door.
-  const ESSENTIAL_WORDS = [
-    "melatonin", "sleep aid", "vitamin", "supplement", "allergy", "antihistamine", "cold & flu", "cough", "pain relief",
-    "ibuprofen", "acetaminophen", "tylenol", "advil", "aspirin", "bandage", "first aid", "sunscreen", "toothpaste",
-    "toothbrush", "floss", "deodorant", "shampoo", "conditioner", "soap", "tampon", "pads", "diaper", "toilet paper",
-    "paper towel", "contact lens", "prescription", "medicine", "thermometer", "laundry detergent", "dish soap",
-  ];
-  const ESSENTIAL_DISMISS_UNDER = 40;
-  const CHEAP_UNDER = 20;
+  // One question per round. Round 2 depends on what you argued in round 1.
+  const QUESTIONS = {
+    1: (f) => `What made you want ${f.the} today?`,
+    2: (f) =>
+      ({
+        need: `How have you been managing without ${f.it}? Convince me it can't wait.`,
+        usage: `Will you use ${f.it} in the next 30 days? Convince me.`,
+        price: "Would you still buy it at full price?",
+        learn: "Could you borrow or rent one first, in case it doesn't stick?",
+        gift: "Did they ask for this one, or is it what you'd pick?",
+        treat: "Is there a cheaper treat that would hit the same spot?",
+      })[f.lastClaim] || `Will you use ${f.it} in the next 30 days? Convince me.`,
+    3: () => "Could you get by with something cheaper, or wait two weeks?",
+    4: (f) => (f.goal ? `Last question. Is it worth more to you than ${f.price} toward ${f.goal}?` : "Last question. If it cost twice as much, would you still want it?"),
+    5: () => "Give the court one concrete reason it has to be this one, and it has to be now.",
+    6: () => "Final chance. What would you give up to make room for it?",
+  };
+  const FALLBACK_QUESTION = "What else should the court know?";
+
+  // ---------- scoring ----------
 
   const KEYWORDS = {
-    need: [
-      "need", "sleep", "insomnia", "doctor", "prescribed", "health", "pain", "sick", "medicine", "ran out", "run out",
-      "running out", "refill", "every day", "everyday", "every night", "daily", "broke", "broken", "replace",
-      "stopped working", "for work", "for school", "for class",
-    ],
-    sale: ["sale", "deal", "discount", "% off", "black friday", "limited time", "coupon"],
-    deserve: ["deserve", "tough week", "rough week", "treat", "reward", "stressed", "sad", "bad day"],
+    need: ["need", "broke", "broken", "stopped working", "ran out", "run out", "running out", "replace", "doctor", "prescribed", "health", "for work", "for school", "for class", "required", "lost my", "lost it"],
+    usage: ["every day", "everyday", "daily", "every night", "commute", "gym", "use it", "all the time", "every week", "weekly", "times a"],
+    price: ["sale", "deal", "discount", "% off", "black friday", "coupon", "cheap", "price", "cheaper", "limited time"],
     learn: ["learn", "practice", "hobby", "skill", "career", "lessons", "get into"],
     gift: ["gift", "present", "birthday", "christmas", "for my mom", "for my dad", "for my friend", "for her", "for him"],
-    want: ["want", "cute", "cool", "looks", "aesthetic", "tiktok", "saw it", "influencer", "pretty", "nice"],
+    treat: ["deserve", "tough week", "rough week", "treat", "reward", "stressed", "sad", "bad day"],
+    want: ["want", "cute", "cool", "looks", "aesthetic", "tiktok", "saw it", "influencer", "pretty", "nice", "why not"],
   };
+  // Points before and after a bonus for specifics (numbers, details, more than one reason).
+  const POINTS = {
+    need: [1, 2], usage: [1, 2], learn: [1, 2], gift: [0, 1], price: [0, 0],
+    treat: [-2, -1], want: [-2, -1], vague: [-1, 0],
+  };
+  const LABEL = { 2: "strong", 1: "good", 0: "neutral", "-1": "weak", "-2": "impulse" };
+  const LOW_EFFORT = /^(idk|i don'?t know|dunno|because|bc|cuz|just because|no|yes|yeah|yep|nah|whatever|why not|ok|okay|i want it|want|sure)\W*$/i;
 
-  const has = (text, words) => words.some((w) => text.includes(w));
-  const money = (n, cur) => (n == null ? "an unknown amount" : `$${Number(n).toFixed(2)}${cur && cur !== "USD" ? ` ${cur}` : ""}`);
-  const categoryOf = (text) => Object.keys(KEYWORDS).find((k) => has(text.toLowerCase(), KEYWORDS[k])) || "vague";
+  const claimsIn = (lower) => Object.keys(KEYWORDS).filter((k) => KEYWORDS[k].some((w) => lower.includes(w)));
+
+  function evaluate(text) {
+    const t = text.trim();
+    const words = t.split(/\s+/).filter(Boolean).length;
+    if (words < 3 || LOW_EFFORT.test(t)) return { strength: "weak", engaged: false, claim: "vague" };
+    const claims = claimsIn(t.toLowerCase());
+    const claim = claims[0] || "vague";
+    const specific = /\d/.test(t) || words >= 14 || claims.length >= 2;
+    return { strength: LABEL[POINTS[claim][specific ? 1 : 0]], engaged: true, claim };
+  }
+
+  // ---------- facts from the page and settings ----------
+
+  // Amazon titles are huge. "Mini Projector for iPhone 1080P..." -> "Mini Projector".
+  function shortName(label) {
+    const cut = label.split(/,| - | \| | for | with | compatible /i)[0];
+    const words = cut
+      .replace(/\s*\(.*?\)\s*/g, " ")
+      .split(/\s+/)
+      .filter((w) => w && !/^\d+(\.\d+)?(mg|ml|oz|g|kg|ct|pack|count|p|w|in|ft)?$/i.test(w));
+    return words.slice(0, 4).join(" ") || label.slice(0, 30);
+  }
+
+  function money(n, cur) {
+    if (n == null) return "this";
+    const v = Number(n);
+    const s = Number.isInteger(v) ? `$${v}` : `$${v.toFixed(2)}`;
+    return cur && cur !== "USD" ? `${s} ${cur}` : s;
+  }
 
   function quote(text, max = 70) {
-    const t = text.trim().replace(/\s+/g, " ");
+    const t = text.trim().replace(/\s+/g, " ").replace(/[.!]+$/, "");
     return t.length > max ? `${t.slice(0, max).replace(/\s+\S*$/, "")}…` : t;
   }
 
-  function shortName(label) {
-    // Amazon titles are huge. Keep the brand-ish first few words, minus sizes.
-    const words = label
-      .replace(/\s*\(.*?\)\s*/g, " ")
-      .split(/[\s,|]+/)
-      .filter((w) => w && !/^\d+(\.\d+)?(mg|ml|oz|g|kg|ct|pack|count)?$/i.test(w));
-    return words.slice(0, 4).join(" ");
-  }
-
-  function blackFriday() {
-    const now = new Date();
-    const nov1 = new Date(now.getFullYear(), 10, 1);
-    const firstThu = 1 + ((4 - nov1.getDay() + 7) % 7);
-    return new Date(now.getFullYear(), 10, firstThu + 22);
-  }
-
-  function facts(item, profile, defenses) {
+  function facts({ item, profile, answers = [] }) {
     const now = new Date();
     const hour = now.getHours();
-    const goal = profile.goal;
-    const budget = profile.monthly_fun_budget;
-    const total = item.total;
     const short = shortName(item.label);
-
-    let context = "";
-    if (total != null && budget) context += ` That's ${Math.round((total / budget) * 100)}% of their monthly fun budget.`;
-    if (total != null && goal?.name && goal.target) {
-      const left = Math.max(goal.target - (goal.saved_so_far || 0), 0);
-      if (left > 0) context += ` Or ${Math.round((total / left) * 100)}% of what's left for their ${goal.name}.`;
-    }
-    if (item.items?.length > 1) context += ` Plus ${item.items.length - 1} more item${item.items.length > 2 ? "s" : ""} in the cart.`;
-
-    const rule = (profile.personal_rules || "").split(/\n|\.\s/).map((s) => s.trim()).filter(Boolean)[0];
-    const focus = (profile.cutting_back_on || "").trim();
-    const needDefense = defenses.find((d) => categoryOf(d) === "need");
-
-    let winLine = "";
-    if (total != null && goal?.name) winLine = ` Skipping it puts ${money(total, item.currency)} toward your ${goal.name}.`;
-    else if (total != null) winLine = ` That's ${money(total, item.currency)} staying in your pocket.`;
-
+    const multi = item.items?.length > 1;
+    const goal = profile.goal;
+    const left = goal?.target ? Math.max(goal.target - (profile.saved || 0), 0) : null;
+    const last = answers[answers.length - 1];
+    const ranked = [...answers].filter((a) => a.engaged).sort((a, b) => POINTS_OF(b) - POINTS_OF(a));
+    const wantish = answers.filter((a) => ["want", "treat", "vague"].includes(a.claim)).length;
     return {
       short,
-      shortLower: short.toLowerCase(),
-      price: money(total, item.currency),
+      the: multi ? "this cart" : `the ${short}`,
+      it: multi ? "all of it" : `the ${short}`,
+      price: money(item.total, item.currency),
+      total: item.total,
+      perUse: item.total != null ? money(Math.round((item.total / 156) * 100) / 100, item.currency) : "",
       time: now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
       late: hour >= 23 || hour < 5,
-      cheap: total != null && total < CHEAP_UNDER,
-      context,
-      pctLine: total != null && budget ? ` But this one is ${Math.round((total / budget) * 100)}% of your fun budget.` : "",
-      ruleQuote: rule ? ` Your own rule says: "${rule.replace(/\.$/, "")}."` : "",
-      focusQuote: !rule && focus ? ` And you told us you're cutting back on ${focus}.` : "",
-      quote: quote(defenses[defenses.length - 1] || ""),
-      strongQuote: needDefense ? quote(needDefense, 50) : "",
-      winLine,
+      goal: goal?.name || "",
+      pctOfLeft: left && item.total != null ? Math.round((item.total / left) * 100) : null,
+      lastLower: (last?.text || "").toLowerCase(),
+      lastClaim: last?.claim || "vague",
+      bestQuote: ranked[0] && POINTS_OF(ranked[0]) > 0 ? quote(ranked[0].text) : "",
+      mostlyWant: wantish * 2 >= answers.length,
     };
   }
+  const POINTS_OF = (a) => ({ strong: 2, good: 1, neutral: 0, weak: -1, impulse: -2 })[a.strength] ?? 0;
 
-  function decide(item, defenses, f) {
-    const cats = defenses.map(categoryOf);
-    if (cats.includes("need")) return "buy";
-    if (cats.includes("learn")) return "wait";
-    if (f.cheap && !cats.includes("deserve") && !f.late) return "buy";
-    if (cats.includes("deserve") || cats.includes("want") || f.late) return item.total != null && item.total >= 25 ? "skip" : "wait";
-    return "wait";
+  function question(round, f, asked) {
+    const q = (QUESTIONS[round] || (() => FALLBACK_QUESTION))(f);
+    return asked.includes(q) ? FALLBACK_QUESTION : q;
   }
 
-  function suggestion(verdict, item, profile, f, defenses) {
-    if (verdict === "buy") return f.cheap ? "" : "Check the reviews once more, then enjoy it guilt-free.";
-    const days = Math.ceil((blackFriday() - new Date()) / 86400000);
-    if (verdict === "wait" && item.total >= 40 && days > 0 && days <= 21) {
-      return `Black Friday is in ${days} day${days === 1 ? "" : "s"}. If you still want it then, it might be cheaper too.`;
-    }
-    if (verdict === "wait" && defenses.some((d) => categoryOf(d) === "learn")) return "Try a cheaper, used or rented version for a month. Still hooked? Upgrade with a clear conscience.";
-    if (verdict === "wait") return "Leave it in your cart for 48 hours. Still want it? Come back and it's yours.";
-    if (profile.goal?.name && item.total != null) return `Move ${money(item.total, item.currency)} into your ${profile.goal.name} fund instead.`;
-    return "A cheaper or secondhand version counts as a win too.";
-  }
+  // ---------- stages ----------
 
-  globalThis.gicScriptedTurn = function ({ stage, item, profile, transcript }) {
-    const defenses = transcript.filter((t) => t.role === "defendant").map((t) => t.text);
-    const f = facts(item, profile, defenses);
-    const say = (speaker, text) => ({ speaker, text });
-
-    if (stage === "open") {
-      const essential = has(item.label.toLowerCase(), ESSENTIAL_WORDS);
-      if (essential && (item.total == null || item.total < ESSENTIAL_DISMISS_UNDER)) {
-        return {
-          lines: [say("prosecutor", LINES.dismissProsecutor(f)), say("judge", LINES.dismissJudge(f))],
-          skip_trial: true,
-          verdict: "buy",
-          suggestion: "",
-        };
+  globalThis.gicScripted = function (stage, ctx) {
+    const f = facts(ctx);
+    const asked = (ctx.transcript || []).filter((t) => t.role === "judge").map((t) => t.text);
+    switch (stage) {
+      case "open":
+        return { opening: LINES.opening(f), question: question(1, f, asked) };
+      case "answer": {
+        const e = evaluate(ctx.answer);
+        const ack = e.engaged ? LINES.acknowledge[e.claim](facts({ ...ctx, answers: [...ctx.answers, { ...e, text: ctx.answer }] })) : LINES.acknowledge.lowEffort();
+        const f2 = facts({ ...ctx, answers: [...ctx.answers, { ...e, text: ctx.answer }] });
+        return { acknowledge: ack, ...e, question: question(ctx.round + 1, f2, asked) };
       }
-      return {
-        lines: [say("prosecutor", f.cheap ? LINES.chargesCheap(f) : LINES.charges(f)), say("judge", LINES.judgeOpen(f))],
-        skip_trial: false,
-        verdict: "none",
-        suggestion: "",
-      };
+      case "witness":
+        return { says: LINES.witness[ctx.witness.id](f) };
+      case "after_witness":
+        return { question: LINES.afterWitness[ctx.witness.id](f) };
+      case "verdict":
+        return { reason: LINES.reason[ctx.verdict](f) };
     }
-
-    if (stage === "rebut") {
-      const cat = categoryOf(defenses[defenses.length - 1] || "");
-      return { lines: [say("prosecutor", LINES.cross[cat](f))], skip_trial: false, verdict: "none", suggestion: "" };
-    }
-
-    const verdict = decide(item, defenses, f);
-    return {
-      lines: [say("prosecutor", LINES.closing[verdict](f)), say("judge", LINES.verdict[verdict](f))],
-      skip_trial: false,
-      verdict,
-      suggestion: suggestion(verdict, item, profile, f, defenses),
-    };
+    throw new Error(`Unknown stage ${stage}`);
   };
 
-  globalThis.gicVerdictTitles = LINES.verdictTitle;
+  globalThis.gicShortName = shortName;
+  globalThis.gicMoney = money;
 })();

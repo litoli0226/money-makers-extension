@@ -1,46 +1,68 @@
-# Guilty if Charged (Money Maker prototype)
+# Money Makers
 
-Chrome extension proof of concept for the Persuasive Design project. When you're about to buy something on Amazon, an "Emergency Summon" toast appears. If you take it to court, a judge asks you to defend the purchase in up to 2 rounds, then gives a verdict. The verdict is only a suggestion and you can always still buy.
+Chrome extension prototype for our Persuasive Design project. Right before you check out on Amazon, a **quick check** asks if you really need it. Save it, buy it, or say "Yes, I want it" and make your case to **the judge** in a short courtroom chat. The verdict is advice. You always decide.
 
-The judge has two modes, picked on the settings page:
+Screens follow the team's Figma file (Low-Mid-Fi Wireframes Iteration 2, "Hi-fi prototype"): quick check, saved pop-up, courtroom rounds, deliberating, verdicts, totally okay, home window and settings.
 
-- **Scripted (default, free):** canned lines in `src/script.js` filled in with what's on the page (item, price, cart size, time of day) and your settings (goal, budget, rules). It reacts to keywords in your defense like "broken", "sale" or "tough week".
-- **Live:** a model on OpenRouter writes each turn. Needs an OpenRouter key. Default model is `anthropic/claude-haiku-5.5`.
+## Try it (5 minutes)
 
-## Run it
+1. Download this repo: **Code → Download ZIP** and unzip it, or `git clone` it.
+2. Open `chrome://extensions`, turn on **Developer mode** (top right), click **Load unpacked**, and pick the unzipped folder.
+3. The settings page opens. Add a savings goal if you want (or leave it blank).
+4. Go to amazon.com or amazon.ca, add something to your cart and open the cart, or click **Buy Now** on a product.
 
-No build step.
+After pulling new changes, click the reload icon on the extension in `chrome://extensions`, then refresh the Amazon tab.
 
-1. Open `chrome://extensions`, turn on Developer mode, click **Load unpacked**, and pick this folder.
-2. The settings page opens. Fill in a goal, budget and rules if you like, then save. Saving is what turns the summon on.
-3. Try it:
-   - Offline: `npm run test-page`, then open http://localhost:8000/cart/ or http://localhost:8000/product.html
-   - Live: any amazon.com or amazon.ca product, cart or checkout page
+Nothing gets bought by the extension. It only pauses the checkout button and clicks it again if you choose to go ahead.
 
-After editing any file, click reload on the extension in `chrome://extensions`, then refresh the shopping page.
+## How a trial works
 
-## Preview without installing
+The rules are in `src/flow.js`, so key moments always happen for the same reason, whether the lines come from the script or from AI.
 
-`npm run preview`, then open http://localhost:8765/test/cart/preview.html. It fakes the Chrome storage API with a sample profile so you can see the summons and hearing in any browser. Handy for the Figma folks.
+| Moment | When it happens |
+|---|---|
+| **Rounds** | 4 questions by default. |
+| **Ends early** | Two low-effort answers ("idk", one word), or the case is clearly decided (score +4 or -4 after 2 answers). |
+| **Expert witness** | Once, after answer 2, only if the case is too close to call (score -1 to +1). Price arguments call the price analyst, need or usage arguments call the cost-per-use analyst, anything else calls "future you". |
+| **Extra round** | After the last round, if the case is leaning yes (+1) but not convincing yet. Up to 6 rounds. |
+| **Verdict** | +2 or more: case approved. -1 or less: save it for later. 0 or +1: recess, meaning a reasonable case that didn't clear the bar, so sleep on it. |
 
-## How it's built
+Each answer is scored strong (+2), good (+1), neutral (0), weak (-1) or impulse (-2). In scripted mode the score comes from keywords in `src/script.js`. In AI mode the judge model scores it using the rubric in `src/background.js`, but it never decides what happens next.
+
+## Who runs the court
+
+Pick in **Settings → Court settings**.
+
+- **Scripted (default, free).** Canned lines in `src/script.js`, filled in with the item, price and your goal.
+- **Claude (Anthropic API key).** Default model Claude Haiku 5.5. Make a key at platform.claude.com.
+- **Any model (OpenRouter key).** Default `anthropic/claude-haiku-5.5`.
+
+A Claude Pro or Max *subscription* can't be used to sign in to a third-party extension. If someone on the team has a Max, Ultra or Team plan, those include monthly API credits. Claim them in claude.ai under **Settings → Billing**, then make a key.
+
+Keys are stored only in your own browser (`chrome.storage`). Don't commit them.
+
+## Editing the judge's personality
+
+`personality/judge.md` is the judge's character brief, and `personality/witness.md` is the expert witness's. They're plain Markdown sent to the model at the start of every AI turn. Edit, save, reload the extension. They don't affect scripted mode. For that, edit `LINES` and `QUESTIONS` in `src/script.js`.
+
+## Files
 
 | File | Job |
 |---|---|
-| `manifest.json` | MV3 manifest. Content script runs on Amazon and localhost |
-| `src/content.js` | Scrapes the item, intercepts Buy Now and Proceed to Checkout, shows the toast and trial overlay (shadow DOM) |
-| `src/script.js` | Scripted judge. All judge copy is in `LINES` at the top, so writers can edit it directly |
-| `src/background.js` | Service worker for live mode. Calls OpenRouter with a JSON schema and returns one judge turn |
-| `options.html/js` | One-time onboarding: goal, budget, rules, never-trigger sites, skip-under threshold, API key |
-| `popup.html/js` | Toolbar "homepage": money kept and recent trials |
-| `test/` | Mock Amazon cart and product pages using Amazon's IDs and classes |
+| `manifest.json` | MV3 manifest. Runs on amazon.com, amazon.ca and localhost |
+| `src/flow.js` | Hearing rules: rounds, witness, extra round, recess, verdict |
+| `src/script.js` | Scripted court: questions, reactions, witness lines, verdict reasons |
+| `src/content.js` | Finds the item, pauses the checkout button, draws every screen (shadow DOM) |
+| `src/background.js` | AI court (Anthropic or OpenRouter) and the Urbanist font |
+| `personality/` | Judge and witness personalities for AI mode |
+| `options.*`, `popup.*`, `ui.css` | Settings page and toolbar popup |
+| `test/` | Mock Amazon cart and product pages for offline testing |
 
-The trial flow is `open` → defense 1 → `rebut` → defense 2 → `verdict`. The judge can skip the trial in its opening line if the item looks like a necessity. Buttons for "Plead guilty & buy", "Recess until tomorrow" and an X to leave are always there.
+Debugging: open DevTools on the Amazon tab and filter the console by `[MM]`. It logs why a check-in did or didn't appear and how each answer was scored.
 
 ## Known gaps
 
-- **API key in the browser (live mode).** OK for team testing, not for a release. Before anyone outside the team installs it, put a small proxy (e.g. a Cloudflare Worker) in front of the API.
-- **Amazon selectors.** Product page selectors were checked on live amazon.com (Nov 2026). Cart rows use Amazon's `data-producttitle` / `data-price` attributes. The cart subtotal, checkout button and checkout page are still unchecked.
-- **Selectors will drift.** They're kept in lists at the top of the scrape functions in `content.js`. Check them against live pages.
-- **Amazon only.** Other stores need their own selectors. A generic fallback (look for buttons labelled "checkout" or "place order") is possible but less reliable.
-- **Live mode JSON.** Not every OpenRouter model follows the JSON schema. The four on the settings page do.
+- **API keys in the browser.** Fine for team testing, not for a release. A small proxy would fix that.
+- **Amazon only.** Selectors were checked on live amazon.com in Nov 2026 and will drift.
+- **Wishlist and reminders.** Saved items go to a list inside the extension. There are no reminders yet.
+- **No price comparison.** The Figma deliberating screen shows "Comparing prices", which would need a price API.
