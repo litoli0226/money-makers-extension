@@ -224,13 +224,13 @@
       head: "Court notice",
       // The headline asks the price as something the person already pays for.
       title: (g) => (g ? `Is this worth ${g.text}?` : "Is this the right purchase to make?"),
-      body: () => "Plead your case now, and hear the opinion of the court before you buy.",
+      body: () => "Plead your case before you buy.",
       gasNote: (G) => `Gas at $${G.perGallon.toFixed(2)} a gallon (${G.source}, ${G.asOf}), ${G.gallonsPerTank}-gallon tank.`,
       advice: "The verdict is advice. You always decide.",
       start: "Take it to court",
       time: "2 min",
-      skip: "Skip court and continue",
-      never: "Never summon me for this item",
+      skip: "Skip court",
+      never: "Don't ask about this item",
       // Disclosure. Keep it true to the code: see "What the court keeps" in README.
       keepsLabel: "What the court keeps",
       keeps: (ai) =>

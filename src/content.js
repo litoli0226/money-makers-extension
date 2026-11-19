@@ -244,9 +244,9 @@
     layer.innerHTML = `<div class="panel-wrap"><div class="panel" role="dialog">${html}</div></div>`;
   }
   // Centered over a Slate scrim (design system: "Backdrop behind takeover"). Used by the court notice.
-  function showCenteredPanel(html) {
+  function showCenteredPanel(html, cls = "") {
     host.style.inset = "0";
-    layer.innerHTML = `<div class="scrim"><div class="panel" role="dialog" aria-modal="true">${html}</div></div>`;
+    layer.innerHTML = `<div class="scrim"><div class="panel ${cls}" role="dialog" aria-modal="true">${html}</div></div>`;
   }
   function showPage(html, cls = "") {
     host.style.inset = "0";
@@ -433,34 +433,23 @@
     const G = globalThis.gicPrices;
     const gas = item.currency && item.currency !== "USD" ? null : G.gasEquivalent(item.total);
     showCenteredPanel(`
-      <div class="panel-head"><span class="notice-head">${ICON.scale}${esc(N.head)}</span><button class="icon-btn" data-act="close" aria-label="Close">${ICON.x}</button></div>
-      <div class="card case-card">
-        <div class="case-row">
-          <div class="case-text">
-            <span class="tiny">The case before the court</span>
-            <b>${esc(item.items.length > 1 ? "This cart" : short)}</b>
-          </div>
-          <span class="case-price">${esc(price)}</span>
-        </div>
-        ${gas ? `<div class="gas" aria-label="${esc(`${price} is about ${gas.text}`)}">
+      <button class="icon-btn notice-x" data-act="close" aria-label="Close">${ICON.x}</button>
+      ${gas ? `<div class="gas-hero" title="${esc(N.gasNote(G.GAS))}">
           <span class="gas-row" aria-hidden="true">${gasIcons(gas)}</span>
-          <span class="gas-eq">= ${esc(gas.text)}</span>
-        </div>
-        <span class="gas-note">${esc(N.gasNote(G.GAS))}</span>` : ""}
-      </div>
-      <div class="notice-ask">
-        <div class="case-judge">${cast.judge}</div>
-        <div><h2 class="h2">${esc(N.title(gas))}</h2><p class="muted">${esc(N.body())}</p></div>
-      </div>
-      <div class="hint">${ICON.check}<span>${esc(N.advice)}</span></div>
+          <span class="gas-eq">${esc(price)} = ${esc(gas.text)}</span>
+        </div>` : ""}
+      <h2 class="h2 notice-q">${esc(N.title(gas))}</h2>
+      <p class="muted notice-sub">${esc(N.body())}</p>
       <div class="stack">
         <button class="btn primary court-go" data-act="court"><span>${esc(N.start)}</span><span class="time">${ICON.clock}${esc(N.time)}</span></button>
         <button class="btn outline" data-act="skip">${esc(N.skip)}</button>
       </div>
-      <details class="keeps"><summary>${esc(N.keepsLabel)}</summary><ul>${N.keeps(aiProvider(settings))
-        .map((t) => `<li>${esc(t)}</li>`)
-        .join("")}</ul></details>
-      <button class="link" data-act="never">${esc(N.never)}</button>`);
+      <div class="notice-foot">
+        <details class="keeps"><summary>${esc(N.keepsLabel)}</summary><ul>${[N.advice, ...N.keeps(aiProvider(settings)), N.gasNote(G.GAS)]
+          .map((t) => `<li>${esc(t)}</li>`)
+          .join("")}</ul></details>
+        <button class="link" data-act="never">${esc(N.never)}</button>
+      </div>`, "notice");
     $("[data-act=court]").focus();
     const skip = async (outcome) => {
       await logOutcome(item, outcome, { where: "notice", format: "mvp" });
@@ -783,12 +772,24 @@
           </div>
           <div class="door-ask">
             <p class="bubble q">${esc(L.name)}</p>
-            <form class="name-pick" id="namePick">
-              <label class="select"><span class="sr">Title</span><select id="title" required>
-                <option value="" disabled selected>Title</option>${TITLES.map((t) => `<option>${esc(t)}</option>`).join("")}
-              </select>${ICON.chevron}</label>
-              <span class="surname" aria-label="Last name">Moneybags</span>
-              <button class="btn primary small" disabled>Start</button>
+            <form class="gov-form" id="namePick" novalidate>
+              <div class="gov-top"><span>FORM GIC-1</span><span>Rev. 11/26</span></div>
+              <fieldset>
+                <legend>Defendant information</legend>
+                <p class="gov-note">Please complete all required fields (*).</p>
+                <div class="gov-row">
+                  <label class="gov-field">Title *
+                    <select id="title" required>
+                      <option value="" selected>-- Select --</option>${TITLES.map((t) => `<option>${esc(t)}</option>`).join("")}
+                    </select>
+                  </label>
+                  <label class="gov-field grow">Last name
+                    <input id="surname" value="Moneybags" readonly aria-readonly="true" aria-describedby="surnameHelp" />
+                    <small id="surnameHelp">Assigned by the court.</small>
+                  </label>
+                </div>
+              </fieldset>
+              <div class="gov-actions"><button class="gov-btn" disabled>Start</button></div>
             </form>
           </div>
           <p class="door-gavel" aria-live="polite"></p>
@@ -797,6 +798,16 @@
       const btn = $("#namePick button");
       sel.addEventListener("keydown", (e) => e.stopPropagation());
       sel.onchange = () => (btn.disabled = !sel.value);
+      // The joke: it looks like a field you can fill in. It isn't.
+      const sur = $("#surname");
+      const nope = () => {
+        sur.parentElement.classList.remove("nope");
+        void sur.offsetWidth;
+        sur.parentElement.classList.add("nope");
+        $("#surnameHelp").textContent = "This field is completed by the court.";
+      };
+      sur.addEventListener("mousedown", nope);
+      sur.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key !== "Tab") nope(); });
       setTimeout(() => sel.focus(), 1900); // after the judge has risen
       on("[data-act=door-leave]", () => {
         logOutcome(item, "left", { where: "meet the judge", format: "mvp" });
@@ -810,6 +821,7 @@
         if (!sel.value) return sel.focus();
         sel.disabled = btn.disabled = true;
         const door = layer.querySelector(".door");
+        sur.disabled = true;
         door.querySelector(".door-bench .plate").textContent = `${sel.value} Moneybags v. ${globalThis.gicShortName(item.label)}`;
         door.querySelector(".door-gavel").textContent = "Court is in session.";
         door.classList.add("gavel");
@@ -1646,6 +1658,19 @@ label input:focus { border-color: var(--blue); }
 .gas-more { font-size: 13px; font-weight: 700; color: var(--blue); }
 .gas-eq { font-size: 15px; font-weight: 700; color: var(--blue); }
 .gas-note { font-size: 11px; color: var(--seal); }
+.panel.notice { position: relative; width: 340px; }
+.notice-x { position: absolute; top: 12px; right: 12px; }
+.gas-hero { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 0 2px; }
+.gas-hero .gas-row { justify-content: center; }
+.gas-hero .tank { width: 34px; height: 18px; }
+.gas-hero .pump svg { width: 24px; height: 24px; }
+.notice-q { text-align: center; margin: 4px 0 0; }
+.notice-sub { text-align: center; margin: 0 0 4px; }
+.notice-foot { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+.notice-foot .keeps { flex: 1 1 100%; order: 2; }
+.notice-foot .link { order: 1; padding: 0; }
+.notice-foot .keeps summary { list-style: none; font-weight: 400; color: var(--seal); font-size: 13px; }
+.notice-foot .keeps summary::-webkit-details-marker { display: none; }
 .notice-ask { display: flex; gap: 12px; align-items: flex-start; }
 .notice-ask .h2 { margin: 0 0 4px; }
 .notice-ask .muted { margin: 0; }
@@ -1673,8 +1698,30 @@ label input:focus { border-color: var(--blue); }
 .door-bench { position: relative; z-index: 1; width: 340px; max-width: 86vw; height: 76px; border-radius: 12px 12px 0 0; background: var(--ink); display: grid; place-items: center; }
 .door-bench .plate { font-size: 13px; padding: 4px 12px; background: rgba(255,255,255,.12); color: var(--white); }
 .door-ask { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 420px; max-width: 100%; animation: in .4s ease-out 1.5s both; }
+.door-ask { width: 460px; }
 .door-ask .bubble { margin: 0; font-size: 17px; font-weight: 600; padding: 12px 16px; background: var(--white); border: 1px solid var(--line); border-radius: 14px; }
-.door .name-pick { width: 100%; background: var(--white); border: 1px solid var(--line); border-radius: 14px; padding: 10px 10px 10px 12px; }
+/* FORM GIC-1: deliberately plain, like a government web form, so the fixed
+   last name reads as a form field you were never allowed to fill in. */
+.gov-form { width: 100%; background: #fff; border: 1px solid #a9a9a9; border-radius: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; color: #222; text-align: left; box-shadow: 1px 1px 0 #d4d4d4; }
+.gov-top { display: flex; justify-content: space-between; padding: 4px 8px; background: #e6e6e6; border-bottom: 1px solid #a9a9a9; font-size: 10px; letter-spacing: .04em; color: #555; }
+.gov-form fieldset { margin: 10px 10px 0; padding: 6px 10px 12px; border: 1px solid #c0c0c0; }
+.gov-form legend { padding: 0 4px; font-size: 12px; font-weight: 700; }
+.gov-note { margin: 0 0 8px; font-size: 11px; color: #555; }
+.gov-row { display: flex; gap: 12px; align-items: flex-start; }
+.gov-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-weight: 700; color: #222; }
+.gov-field.grow { flex: 1; }
+.gov-form select, .gov-form input { font: 13px Arial, Helvetica, sans-serif; color: #111; height: 24px; padding: 2px 4px; border: 1px solid #767676; border-radius: 0; background: #fff; box-shadow: inset 1px 1px 1px rgba(0,0,0,.12); outline: none; }
+.gov-form select { min-width: 110px; }
+.gov-form select:focus, .gov-form input:focus { outline: 2px solid #3b6fd6; outline-offset: 0; }
+.gov-form input[readonly] { background: #ebebe4; color: #6d6d6d; cursor: not-allowed; }
+.gov-field small { font-size: 11px; font-weight: 400; color: #666; }
+.gov-field.nope input { animation: nope .3s; }
+.gov-field.nope small { color: #b00020; }
+@keyframes nope { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+.gov-actions { display: flex; justify-content: flex-end; padding: 10px; }
+.gov-btn { font: 13px Arial, Helvetica, sans-serif; color: #111; padding: 3px 18px; border: 1px solid #767676; border-radius: 2px; background: linear-gradient(#fdfdfd, #dcdcdc); cursor: pointer; }
+.gov-btn:hover:not(:disabled) { background: linear-gradient(#fff, #e8e8e8); }
+.gov-btn:disabled { color: #8d8d8d; border-color: #b5b5b5; cursor: default; }
 .door-gavel { margin: 0; min-height: 22px; font-size: 18px; font-weight: 700; color: var(--ink); }
 .door.gavel .door-bench { animation: thud .35s ease-out; }
 .door.gavel .door-gavel { animation: in .3s ease-out; }
