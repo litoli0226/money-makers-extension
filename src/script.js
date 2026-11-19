@@ -224,7 +224,7 @@
       head: "Court notice",
       // A summons from the court. The gas figure appears once, in the charge.
       kicker: "Summons",
-      charge: (g, what, price) => `What makes ${what} more important than ${g ? g.text : `keeping ${price}`}, defendant?`,
+      charge: (g, what, price) => `What makes ${what} more important than ${g ? g.text : price ? `keeping ${price}` : "keeping your money"}, defendant?`,
       body: () => "Get the court's opinion before you buy.",
       start: "Plead my case",
       time: "3 min",

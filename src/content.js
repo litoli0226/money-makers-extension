@@ -87,17 +87,55 @@
     return null;
   }
 
-  // Checked on a live amazon.com product page (Nov 2026).
+  // Checked on a live amazon.com product page (Nov 2026). Amazon has several
+  // buy-box layouts (plain, Subscribe & Save accordion, style swatches), and
+  // some price elements are empty, so every candidate is tried until one
+  // parses to a number.
+  function productPrice() {
+    // Hidden form fields carry the price of the selected option.
+    for (const sel of [
+      'input[name="items[0.base][customerVisiblePrice][amount]"]',
+      "#twister-plus-price-data-price",
+      "#attach-base-product-price",
+      "#priceValue",
+    ]) {
+      const v = num(document.querySelector(sel)?.value);
+      if (v) return v;
+    }
+    const priceOf = (el) => {
+      const off = num(el.querySelector(".a-offscreen")?.textContent);
+      if (off) return off;
+      const whole = el.querySelector(".a-price-whole")?.textContent.replace(/[^\d]/g, "");
+      const frac = el.querySelector(".a-price-fraction")?.textContent.replace(/[^\d]/g, "") || "00";
+      return whole ? parseFloat(`${whole}.${frac}`) : num(el.textContent);
+    };
+    for (const scope of [
+      "#corePrice_feature_div",
+      "#corePriceDisplay_desktop_feature_div",
+      "#apex_desktop",
+      "#newAccordionRow_0, #newAccordionRow",
+      "#buybox, #desktop_buybox",
+      "#twister .swatchSelect, #twister [aria-checked=true], .inline-twister-swatch.a-button-selected",
+      "#centerCol, #ppd",
+    ]) {
+      for (const root of document.querySelectorAll(scope)) {
+        // Skip struck-through list prices.
+        for (const el of root.querySelectorAll(".a-price:not(.a-text-price)")) {
+          const v = priceOf(el);
+          if (v) return v;
+        }
+        if (/swatch|twister/i.test(scope)) {
+          const v = num((root.textContent.match(/\$\s?[\d,]+(?:\.\d{2})?/) || [])[0]);
+          if (v) return v;
+        }
+      }
+    }
+    return null;
+  }
   function scrapeProduct() {
     const title = firstText(["#productTitle"]);
-    const price = num(
-      firstText([
-        "#corePrice_feature_div .a-offscreen",
-        "#corePriceDisplay_desktop_feature_div .a-offscreen",
-        "#apex_desktop .a-price .a-offscreen",
-        ".a-price .a-offscreen",
-      ])
-    );
+    const price = productPrice();
+    if (title && price == null) log("No price found on this product page.");
     const imgEl = document.querySelector("#landingImage, #imgBlkFront, #main-image-container img");
     const image = imgEl?.getAttribute("data-old-hires") || imgEl?.currentSrc || imgEl?.src || "";
     return title ? { items: [{ title, price, image }], total: price } : null;
@@ -543,11 +581,15 @@
         <b>${esc(N.kicker)}</b>
       </div>
       <div class="summons-main">
-        <h2 class="h2 charge">${esc(N.charge(gas, what, price))}</h2>
-        <div class="evidence">
+        <h2 class="h2 charge">${esc(N.charge(gas, what, item.total == null ? null : price))}</h2>
+        ${
+          item.total == null
+            ? ""
+            : `<div class="evidence">
           <span class="ev-price">${esc(price)}</span>
           ${gas ? `<span class="gas-row" aria-hidden="true">${gasIcons(gas)}</span>` : ""}
-        </div>
+        </div>`
+        }
       </div>
       <p class="muted summons-body">${esc(N.body())}</p>
       <div class="stack">
