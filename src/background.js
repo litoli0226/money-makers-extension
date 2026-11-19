@@ -91,7 +91,8 @@ Set "kind":
 Score "strength", "engaged", "unsure" and "claim" exactly as in the answer stage rubric: strength is strong, good, neutral, weak or impulse; claim is need, usage, price, learn, gift, treat, want or vague. A mechanism with specifics counts as strong or good.
 If "objection_allowed" is true and kind is not "mechanism": write "objection". If kind is "reason", tell them you asked how, not why, in one sentence (for example "Not why, defendant. I asked how."). If kind is "unclear" (a non-answer such as "um", "idk", "it's nice"), don't say "not why": show you heard exactly what they wrote and that it can't go on the record (for example: "'Um' is not something the court can write down."). Either way, then ask once more, plainly, for when and where they'll use it. Leave "acknowledge" empty.
 Otherwise: write "acknowledge": one short sentence reacting to the answer, without repeating it back. Leave "objection" empty. If "second" is true, this was their second answer: vary the acknowledgment and don't praise.
-Always write "followup": one short question that pins down a number or a moment in their answer (how often, when first, for whom, what happens if they skip it). It's only shown when there was no objection.`,
+Always write "followup": one short question that pins down a number or a moment in their answer (how often, when first, for whom, what happens if they skip it). It's only shown when there was no objection. You may open it with a few dry words reacting to the answer, if they're funny; no filler like "Noted."
+Set "flag" to "violent", "hateful", "sexual" or "self_harm" if the answer contains that kind of content (threats or violence toward people, slurs or hate toward a group, sexual content, thoughts of self-harm), otherwise "none".`,
     schema: {
       kind: ["mechanism", "reason", "unclear"],
       strength: ["strong", "good", "neutral", "weak", "impulse"],
@@ -101,6 +102,7 @@ Always write "followup": one short question that pins down a number or a moment 
       acknowledge: "string",
       objection: "string",
       followup: "string",
+      flag: ["none", "violent", "hateful", "sexual", "self_harm"],
     },
   },
   mvp_charge: {
@@ -111,7 +113,7 @@ Always write "followup": one short question that pins down a number or a moment 
   mvp_witness: {
     who: "witness",
     task: `Stage: witness. You are the witness named in "witness.name" ("witness.role" says who you are; "The item itself" speaks as the item, "Your wallet" as the defendant's wallet). The judge just asked you "charge". Answer it in "says": one or two short sentences, dry and specific, no questions.
-Take the side in "witness.stance": "for" means your answer leans toward the purchase, "against" means it leans against it. Never say which side you're on.
+Give information (a figure, a finding, cost-per-use math from what the defendant said); never tell the judge or the defendant what to ask or do. Take the side in "witness.stance": "for" means your answer leans toward the purchase, "against" means it leans against it. Never say which side you're on.
 If "witness.id" is "research": quote one finding from "findings" in the case file, in plain words, and set "finding_id" to its id. Pick the finding that fits the stance when you can. No numbers beyond the finding's.
 Otherwise set "finding_id" to "none" (simple arithmetic from the case file is fine).`,
     schema: { says: "string", finding_id: "string" },
@@ -120,13 +122,15 @@ Otherwise set "finding_id" to "none" (simple arithmetic from the case file is fi
     who: "judge",
     task: `Stage: mvp_respond. The defendant just responded to the expert witness ("answer" in the case file).
 Score "strength", "engaged", "unsure" and "claim" as in the answer stage rubric.
-Write "acknowledge": one short sentence, then say the court will now deliberate.`,
+Leave "acknowledge" empty (the court goes straight to deliberation).
+Set "flag" as in mvp_how: "violent", "hateful", "sexual", "self_harm" or "none".`,
     schema: {
       strength: ["strong", "good", "neutral", "weak", "impulse"],
       engaged: "boolean",
       unsure: "boolean",
       claim: ["need", "usage", "price", "learn", "gift", "treat", "want", "vague"],
       acknowledge: "string",
+      flag: ["none", "violent", "hateful", "sexual", "self_harm"],
     },
   },
   gift_check: {
@@ -144,7 +148,8 @@ Write "signup": one or two sentences inviting them to set a savings goal for nex
   },
 };
 Object.assign(STAGES, MVP_STAGES);
-STAGES.mvp_respond_q = STAGES.after_witness; // same job: thank the witness, ask the defendant to respond
+STAGES.mvp_respond_q = STAGES.after_witness;
+// The closing question is written by the code (MVP_LINES.closing), in both modes. // same job: thank the witness, ask the defendant to respond
 
 // Turn the shorthand above into a JSON schema.
 function jsonSchema(shape) {

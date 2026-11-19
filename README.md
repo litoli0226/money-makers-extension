@@ -163,3 +163,11 @@ The Exhibit A photo shows a grey box that pulses (three times, under 5 s, none w
 ### Guest sessions (Nov 19)
 
 In guest mode (the default), every trial is a fresh session: a goal or savings from an earlier trial don't count. Only a goal set during this trial shows up on the verdict and the saved screen. Switch Settings → Guest history to "Keep" to test a returning user. Heads are now 1.25x and bodies 0.88x.
+
+### Safety, witness relevance, less filler, closing turn (Nov 19)
+
+- **Off-limits input** (`src/safety.js`): violent, hateful and self-harm answers are caught in the browser before anything is scored or sent to an AI. Violent or hateful answers are struck through ("Stricken from the record. This court hears cases about purchases, nothing else.") and the question is asked again. Self-harm gets a plain card with the 988 Suicide & Crisis Lifeline (call or text 988, 988lifeline.org), no joke. In AI mode the model also returns a `flag` on `mvp_how` and `mvp_respond` for what the list misses; flagged answers are handled the same way. Stricken text is replaced in the transcript, so it's never quoted back or sent on. The footer says "The judge is an AI. It only hears cases about purchases and can make mistakes." in AI mode.
+- **Expert witness, relevant:** a gift gets the giving study ("Witness, does spending on someone else do anything for the person paying?"); a plan with a frequency ("every night") gets cost-per-use math from the defendant's own words ("Used every night, $48 comes to about 13 cents a use over a year."); anything else gets a published finding. The witness gives information and never tells the judge what to ask.
+- **Less filler:** no acknowledgments ("The court writes that down."), no "The court will hear from a witness." line, no "So noted. The court will now deliberate.", no "Let the record show" jabs.
+- **Closing turn:** one more question before deliberation, picked at random from `MVP_LINES.closing` ("Closing argument, defendant. One sentence: why this, and why now?"). It's scored like the response to the witness.
+- **Summons:** 480 px wide; the question takes 2/3 of the row and the price with tank gauges 1/3 (stacks under 460 px).

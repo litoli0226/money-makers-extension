@@ -522,11 +522,13 @@
         <span class="av face ring">${faceOf(cast.judge)}</span>
         <b>${esc(N.kicker)}</b>
       </div>
-      <div class="evidence">
-        <span class="ev-price">${esc(price)}</span>
-        ${gas ? `<span class="gas-row" aria-hidden="true">${gasIcons(gas)}</span>` : ""}
+      <div class="summons-main">
+        <h2 class="h2 charge">${esc(N.charge(gas, what, price))}</h2>
+        <div class="evidence">
+          <span class="ev-price">${esc(price)}</span>
+          ${gas ? `<span class="gas-row" aria-hidden="true">${gasIcons(gas)}</span>` : ""}
+        </div>
       </div>
-      <h2 class="h2 charge">${esc(N.charge(gas, what, price))}</h2>
       <p class="muted summons-body">${esc(N.body())}</p>
       <div class="stack">
         <button class="btn primary court-go" data-act="court"><span>${esc(N.start)}</span><span class="time">${ICON.clock}${esc(N.time)}</span></button>
@@ -994,7 +996,7 @@
           <div class="log" id="log" aria-live="polite"></div>
           <div id="controls"></div>
         </div>
-        <p class="fine">No right or wrong answers. The verdict is advice. You always decide.</p>
+        <p class="fine">${settings.mode === "anthropic" || settings.mode === "openrouter" ? "The judge is an AI. It only hears cases about purchases and can make mistakes." : "The judge only hears cases about purchases."} The verdict is advice. You always decide.</p>
       </div>`, "court");
 
     const logEl = $("#log");
@@ -1004,9 +1006,9 @@
     // Time-left bar: an estimate in steps, not a running clock. It only moves
     // forward; an objection adds time to the estimate but never empties the bar.
     // Seconds per step (rough; tune after timing testers, R3).
-    const EST = { name: 8, how: 30, objection: 25, followup: 20, gift: 8, witness: 14, respond: 25, deliberate: 8 };
+    const EST = { name: 8, how: 30, objection: 25, followup: 20, gift: 8, witness: 14, respond: 25, closing: 20, deliberate: 8 };
     // Two "how" answers before the witness, either way: an objection retry or a follow-up.
-    const eta = { done: 0, left: ["name", "how", "followup", "witness", "respond", "deliberate"], shown: 0 };
+    const eta = { done: 0, left: ["name", "how", "followup", "witness", "respond", "closing", "deliberate"], shown: 0 };
     function drawEta(label) {
       const leftSec = eta.left.reduce((t, k) => t + EST[k], 0);
       const frac = eta.done / (eta.done + leftSec || 1);
@@ -1083,6 +1085,7 @@
       }
       logEl.appendChild(row);
       scroll();
+      return row;
     }
     function moment(text) {
       transcript.push({ role: "court", text });
@@ -1157,11 +1160,44 @@
           const v = input.value.trim();
           if (!v) return;
           controls.innerHTML = "";
+          // Checked here, before anything is scored or sent to an AI.
+          const flag = globalThis.gicSafety?.check(v);
+          if (flag) return strike(v, flag).then(() => askText(placeholder).then(resolve));
           state.inputs += 1;
           say("defendant", v);
           resolve(v);
         };
       });
+    }
+
+    // Off-limits input: shown struck through, answered by the court, never
+    // scored or sent to the AI. Self-harm gets the 988 Lifeline instead.
+    async function strike(text, flag) {
+      log("Safety flag:", flag);
+      state.flags = [...(state.flags || []), flag];
+      const row = say("defendant", text);
+      transcript[transcript.length - 1].text = "[stricken from the record]"; // never quoted back or sent on
+      row?.classList.add(flag === "self_harm" ? "set-aside" : "struck");
+      const line = globalThis.gicSafety.lines[flag] || globalThis.gicSafety.lines.violent;
+      if (flag === "self_harm") {
+        const r = document.createElement("div");
+        r.className = "row care";
+        r.innerHTML = `<div class="care-card" role="note"><b>You don't have to go through this alone.</b><span>${esc(line)}</span><a href="https://988lifeline.org/" target="_blank" rel="noopener">988lifeline.org</a></div>`;
+        logEl.appendChild(r);
+        scroll();
+        return;
+      }
+      say("judge", line);
+      await readPause(line);
+    }
+
+    async function aiStrike(flag) {
+      const rows = logEl.querySelectorAll(".msg.me");
+      const last = rows[rows.length - 1];
+      for (let i = transcript.length - 1; i >= 0; i--) if (transcript[i].role === "defendant") { transcript[i].text = "[stricken from the record]"; break; }
+      state.inputs = Math.max(0, state.inputs - 1);
+      last?.remove();
+      await strike(last?.innerText || "", flag);
     }
 
     // Buttons (the "button moment": title picker, gift check).
@@ -1212,6 +1248,10 @@
       const a = await askText(L.howPlaceholder);
       howStep = false;
       const r = await ask("mvp_how", { answer: a, objection_allowed: objectionAllowed, second: state.answers.length > 0 });
+      if (r.flag && r.flag !== "none") {
+        await aiStrike(r.flag); // the model caught what the local list missed
+        return howAnswer(objectionAllowed);
+      }
       state.answers.push({ text: a, kind: r.kind, strength: r.strength, engaged: r.engaged !== false, unsure: !!r.unsure, claim: r.claim });
       log("How answer:", r.kind, r.strength, r.claim, "score", flow.score(state));
       return r;
@@ -1236,8 +1276,6 @@
     } else if (r1.followup) {
       // No objection: one follow-up first, so the witness doesn't arrive after a single answer.
       stepDone("how");
-      say("judge", r1.acknowledge);
-      await readPause(r1.acknowledge);
       say("judge", r1.followup, { question: true });
       r1 = await howAnswer(false);
       stepDone("followup");
@@ -1245,8 +1283,6 @@
     }
     stepDone("how"); // no-op if already counted
     stepDrop("followup");
-    say("judge", r1.acknowledge);
-    await readPause(r1.acknowledge);
 
     // ----- optional: gift buttons (C4 switch) -----
     if (settings.giftButtons === "on" && state.answers.some((a) => a.claim === "gift")) {
@@ -1265,8 +1301,6 @@
     state.witness = flow.mvpPickWitness(state, lastWitness);
     chrome.storage.local.set({ lastWitness: state.witness.id });
     log("Witness:", state.witness.id, state.witness.stance);
-    say("judge", L.callWitness);
-    await readPause(L.callWitness);
     const callName = { wallet: "your wallet", item: "the item itself", future: "Future you" }[state.witness.id] || `the ${state.witness.name.toLowerCase()}`;
     moment(`The doors open. The court calls ${callName} to the stand.`);
     const stand = scene.querySelector(".spot.witness");
@@ -1289,11 +1323,28 @@
       const q = await ask("mvp_respond_q", { witness: state.witness });
       say("judge", q.question, { question: true });
       const a = await askText("Your response");
-      const r = await ask("mvp_respond", { answer: a });
+      let r = await ask("mvp_respond", { answer: a });
+      while (r.flag && r.flag !== "none") {
+        await aiStrike(r.flag);
+        r = await ask("mvp_respond", { answer: await askText("Your response") });
+      }
       state.answers.push({ text: a, strength: r.strength, engaged: r.engaged !== false, unsure: !!r.unsure, claim: r.claim });
-      say("judge", r.acknowledge);
-      await readPause(r.acknowledge);
       stepDone("respond");
+    }
+    if (state.left) return;
+
+    // ----- 5b. Closing: one more turn before the court deliberates -----
+    {
+      const q = globalThis.gicScriptedMvp("mvp_closing_q", ctx());
+      say("judge", q.question, { question: true });
+      let r = await ask("mvp_respond", { answer: await askText("Your closing argument") });
+      while (r.flag && r.flag !== "none") {
+        await aiStrike(r.flag);
+        r = await ask("mvp_respond", { answer: await askText("Your closing argument") });
+      }
+      const last = transcript.filter((t) => t.role === "defendant").pop();
+      state.answers.push({ text: last?.text || "", strength: r.strength, engaged: r.engaged !== false, unsure: !!r.unsure, claim: r.claim });
+      stepDone("closing");
     }
     if (state.left) return;
 
@@ -1764,6 +1815,11 @@ label input:focus { border-color: var(--blue); }
 .chat-head b { display: block; font-size: 16px; }
 .chat-head small { display: block; font-size: 12px; color: var(--seal); }
 .av { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+.msg.me.struck .bubble { text-decoration: line-through; text-decoration-thickness: 2px; opacity: .55; }
+.row.care { display: flex; justify-content: center; }
+.care-card { display: flex; flex-direction: column; gap: 6px; max-width: 86%; padding: 14px 16px; border-radius: 14px; background: var(--white); border: 1px solid var(--paper); font-size: 14px; line-height: 1.45; color: var(--ink); }
+.care-card b { font-size: 15px; }
+.care-card a { color: var(--blue); font-weight: 600; }
 .av svg { width: 17px; height: 17px; }
 .av.judge { background: var(--blue-tint); color: var(--blue); }
 .av.gold { background: var(--gold-tint); color: var(--gold-deep); }
@@ -1816,16 +1872,20 @@ label input:focus { border-color: var(--blue); }
 .gas-note { font-size: 11px; color: var(--seal); }
 .panel.notice { position: relative; width: 360px; text-align: left; }
 .notice-x { position: absolute; top: 12px; right: 12px; }
-.panel.summons { padding: 22px 24px 18px; gap: 14px; border: 1px solid var(--paper); box-shadow: 0 0 0 5px var(--white), 0 0 0 6px var(--line), 0 18px 40px rgba(43,47,54,.18); }
+.panel.summons { width: 480px; padding: 22px 24px 18px; gap: 14px; border: 1px solid var(--paper); box-shadow: 0 0 0 5px var(--white), 0 0 0 6px var(--line), 0 18px 40px rgba(43,47,54,.18); }
 .summons-head { display: flex; align-items: center; gap: 10px; padding-right: 28px; }
 .summons-head .av.face { width: 36px; height: 36px; }
 .av.face.ring { box-shadow: 0 0 0 2px var(--white), 0 0 0 3px var(--gold); }
 .summons-head b { font-size: 12px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: var(--gold-deep); }
-.evidence { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: var(--white); border: 1px solid var(--line); border-radius: 12px; }
-.ev-price { font-size: 22px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; }
-.evidence .gas-row { justify-content: flex-end; }
-.evidence .tank { width: 28px; height: 15px; }
-.charge { margin: 2px 0 0; font-size: 20px; line-height: 1.3; text-align: left; text-wrap: balance; }
+/* Question 2/3, evidence 1/3. Stacks on narrow screens. */
+.summons-main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 14px; align-items: stretch; }
+.evidence { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 8px; padding: 12px 14px; background: var(--white); border: 1px solid var(--line); border-radius: 12px; }
+.ev-price { font-size: 22px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; line-height: 1; }
+.evidence .gas-row { justify-content: flex-start; }
+.evidence .tank { width: 24px; height: 14px; }
+.evidence .pump svg { width: 18px; height: 18px; }
+.charge { margin: 0; font-size: 20px; line-height: 1.3; text-align: left; align-self: center; }
+@media (max-width: 460px) { .summons-main { grid-template-columns: 1fr; } }
 .summons-body { margin: -6px 0 2px; text-align: left; font-size: 14px; }
 .notice-never { align-self: center; text-align: center; }
 .notice-privacy { margin: 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.45; color: var(--seal); text-align: left; }

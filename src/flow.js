@@ -129,15 +129,18 @@
     item: { id: "item", name: "The item itself", role: "Witness · will live in your house" },
     wallet: { id: "wallet", name: "Your wallet", role: "Witness · has seen money leave before" },
   };
+  // Relevant first: a gift gets the research on giving; a plan with a
+  // frequency ("every night") gets the cost-per-use math; anything else gets
+  // a published finding. When two fit, alternate with last trial's angle.
   function mvpPickWitness(state, lastId = null, rand = Math.random) {
     const claims = state.answers.map((a) => a.claim);
-    const has = (...cs) => claims.some((c) => cs.includes(c));
-    const pool = [["research", 2], ["price", 1]];
-    if (has("need", "usage", "learn") || state.answers.some((a) => a.kind === "mechanism")) pool.push(["usage", 2]);
-    const options = pool.filter(([id]) => id !== lastId);
-    const total = options.reduce((t, [, w]) => t + w, 0);
-    let r = rand() * total;
-    const id = (options.find(([, w]) => (r -= w) < 0) || options[0])[0];
+    const freq = globalThis.gicFrequency ? state.answers.some((a) => globalThis.gicFrequency(a.text)) : false;
+    let options;
+    if (claims.includes("gift")) options = ["research"];
+    else if (freq) options = ["usage", "research"];
+    else options = ["research"];
+    const fresh = options.filter((id) => id !== lastId);
+    const id = (fresh.length ? fresh : options)[Math.floor(rand() * (fresh.length || options.length))];
     return { ...MVP_WITNESSES[id], stance: rand() < 0.5 ? "for" : "against" };
   }
 

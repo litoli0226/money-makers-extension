@@ -89,7 +89,7 @@
     usage: ["every day", "everyday", "daily", "every night", "commute", "gym", "use it", "all the time", "every week", "weekly", "times a"],
     price: ["sale", "deal", "discount", "% off", "black friday", "coupon", "cheap", "price", "cheaper", "limited time"],
     learn: ["learn", "practice", "hobby", "skill", "career", "lessons", "get into"],
-    gift: ["gift", "present", "birthday", "christmas", "for my mom", "for my dad", "for my friend", "for her", "for him"],
+    gift: ["gift", "present", "birthday", "christmas", "anniversary", "valentine", "for my mom", "for my dad", "for my friend", "for my girlfriend", "for my boyfriend", "for my partner", "for my wife", "for my husband", "for my sister", "for my brother", "for her", "for him", "give it to", "giving it to", "give them to", "gonna give"],
     treat: ["deserve", "tough week", "rough week", "treat", "reward", "stressed", "sad", "bad day"],
     want: ["want", "cute", "cool", "looks", "aesthetic", "tiktok", "saw it", "influencer", "pretty", "nice", "why not"],
   };
@@ -266,45 +266,52 @@
     // The witness: the judge asks a charged question, the witness answers.
     // Each witness has lines for and against the purchase; the trial picks a
     // stance at random so the witness can't be predicted.
+    // The expert witness gives information, never tells the judge what to ask.
     witness: {
       research: {
-        charge: (f) => `Witness, you've read the studies. Will ${f.it} make the defendant happier, or just busier?`,
+        charge: (f) =>
+          f.gift ? "Witness, does spending on someone else do anything for the person paying?" : `Witness, what do the studies say about buying ${f.it}?`,
       },
       usage: {
-        charge: () => "Witness, the defendant says they'll use it. Run the numbers.",
-        for: [(f) => `At ${f.price}, used three times a week for a year, that's about ${f.perUse} a use. Cheaper than a coffee.`, () => "Used as described, this pays for itself in use. The court has seen worse math."],
-        against: [(f) => `${f.price} is cheap per use only if it gets used. I've seen plenty of things that didn't.`, () => "The numbers work on paper. The court should ask whether the plan survives a busy week."],
+        charge: (f) => `Witness, the defendant plans to use ${f.it} ${f.freqWords}. What does that come to?`,
+        for: [(f) => `Used ${f.freqWords}, ${f.price} comes to about ${f.perUsePlan} a use over a year.`],
+        against: [(f) => `Used ${f.freqWords}, it's about ${f.perUsePlan} a use. If that slips to once a week, it's ${f.perUseWeekly}.`],
       },
       price: {
         charge: (f) => `Witness, is ${f.price} a deal, or does it only feel like one?`,
-        for: [() => "In my line of work, this price is ordinary. No trick here.", () => "It's a fair price. Waiting won't make it a better one."],
-        against: [() => "It feels like a deal because the page says so. I'd check again in two weeks.", () => "Every price is a deal on the day you want something."],
+        for: [() => "In my line of work, this price is ordinary. No trick here."],
+        against: [() => "It feels like a deal because the page says so."],
       },
       future: {
         charge: (f) => `Future ${f.defendant}, you've lived with this choice. Was it worth it?`,
-        for: [() => "Honestly? I use it more than I thought I would. Don't tell my wallet.", () => "I'd buy it again. Slower this time, but I'd buy it."],
-        against: [(f) => `Honestly? I don't remember wanting it this much. I do remember the ${f.price}.`, () => "It's fine. It's on a shelf. The shelf looks nice."],
+        for: [() => "Honestly? I use it more than I thought I would."],
+        against: [(f) => `Honestly? I don't remember wanting it this much. I do remember the ${f.price}.`],
       },
       item: {
-        charge: (f) => `${f.The}, you'll be the one living in the house. What happens to you after the box is opened?`,
-        for: [() => "I get used. Daily. Some of us are lucky.", () => "I'd be put to work by the end of the day. I've seen the plan."],
-        against: [() => "First week, I'm the favorite. By week three, I'm in a drawer with the other favorites.", () => "I'll be used twice, photographed once and moved during spring cleaning."],
+        charge: (f) => `${f.The}, what happens to you after the box is opened?`,
+        for: [() => "I get used. Daily."],
+        against: [() => "First week, I'm the favorite. By week three, I'm in a drawer."],
       },
       wallet: {
         charge: (f) => `Wallet, you've seen ${f.price} leave before. How did it go?`,
-        for: [() => "Fine, actually. When it's planned, I don't mind.", () => "This one has a reason attached. Those leave on good terms."],
-        against: [() => "It left quietly. I never heard from it again.", () => "I've been lighter. I don't recommend it."],
+        for: [() => "Fine, actually. When it's planned, I don't mind."],
+        against: [() => "It left quietly. I never heard from it again."],
       },
     },
+    // One last turn before deliberation. Charged and short.
+    closing: [
+      () => "Closing argument, defendant. One sentence: why this, and why now?",
+      () => "Last question. If it cost twice as much, would you still want it?",
+      (f) => `Last question. Would you rather have ${f.it}, or ${f.price} back next month?`,
+    ],
     respondQ: {
-      research: () => "Ah, but that must be different for you, right, defendant?",
+      research: (f) => (f.gift ? "Defendant, is this gift for them, or for you?" : "Ah, but that must be different for you, right, defendant?"),
       item: (f) => `Defendant, ${f.the} has spoken. Your response?`,
       wallet: () => "Defendant, your wallet has testified. Your response?",
       price: () => "Defendant, could you wait two weeks and see if the price holds?",
-      usage: () => "Defendant, the witness ran your numbers. Do they hold up in a busy week?",
+      usage: () => "Defendant, will that plan survive a busy week?",
       future: () => "Defendant, anything you'd like to say to your future self?",
     },
-    respondAck: () => "So noted. The court will now deliberate.",
     giftCheck: (f) => `Mmm... ${f.defendant} buys for the other Moneybags. If this is a gift, that changes the verdict.`,
     reason: {
       approve: (f) => `${f.bestQuote ? `You said "${f.bestQuote}" and backed it up.` : "You made your case and backed it up."} Case approved.`,
@@ -341,7 +348,23 @@
     const f = facts(ctx);
     const t = ctx.title ? `${ctx.title} Moneybags` : "Moneybags";
     const the = f.the === "the " ? "this item" : f.the;
-    return { ...f, defendant: t, the, The: the.charAt(0).toUpperCase() + the.slice(1), it: f.it === "the " ? "this item" : f.it };
+    const answers = ctx.answers || [];
+    // Usage math from the defendant's own words ("every night").
+    const fr = answers.map((a) => frequency(a.text)).find(Boolean);
+    const total = ctx.item?.total;
+    const cents = (v) => (v >= 1 ? money(v, ctx.item?.currency) : `${Math.max(1, Math.round(v * 100))} cents`);
+    return {
+      ...f,
+      defendant: t,
+      the,
+      The: the.charAt(0).toUpperCase() + the.slice(1),
+      it: f.it === "the " ? "this item" : f.it,
+      gift: answers.some((a) => a.claim === "gift"),
+      freq: fr,
+      freqWords: fr ? fr.words : "regularly",
+      perUsePlan: fr && total ? cents(total / fr.perYear) : "",
+      perUseWeekly: total ? cents(total / 52) : "",
+    };
   }
 
   function scoreHow(text, kind) {
@@ -361,6 +384,25 @@
 
   globalThis.gicHowKind = howKind;
   globalThis.gicMvpLines = MVP_LINES;
+
+  // "every night" -> 365 uses a year. Null when the answer names no frequency.
+  const NUM = { once: 1, one: 1, twice: 2, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
+  function frequency(text) {
+    const t = String(text || "").toLowerCase();
+    const d = t.match(/\b(?:every|each) (day|night|morning|evening)\b/);
+    if (d) return { perYear: 365, words: `every ${d[1]}` };
+    if (/\bdaily\b|\bnightly\b/.test(t)) return { perYear: 365, words: "every day" };
+    const m = t.match(/\b(\d+|once|one|twice|two|three|four|five|six|seven)\s*(?:times?\s*)?(?:a|per|each)\s*(day|week|month)\b/);
+    if (m) {
+      const n = NUM[m[1]] || parseInt(m[1], 10);
+      const per = { day: 365, week: 52, month: 12 }[m[2]];
+      return { perYear: n * per, words: `${m[1] === "1" ? "once" : m[1]}${/^(once|twice)$/.test(m[1]) ? "" : " times"} a ${m[2]}` };
+    }
+    if (/\b(every|each) week(end)?s?\b|\bweekly\b|\bweekends\b/.test(t)) return { perYear: 52, words: "once a week" };
+    if (/\bmonthly\b|\bevery month\b/.test(t)) return { perYear: 12, words: "once a month" };
+    return null;
+  }
+  globalThis.gicFrequency = frequency;
 
   globalThis.gicScriptedMvp = function (stage, ctx) {
     const f = mvpFacts(ctx);
@@ -405,11 +447,15 @@
         }
         return { says: LINES.witness[ctx.witness.id](f) };
       }
+      case "mvp_closing_q": {
+        const c = MVP_LINES.closing;
+        return { question: c[Math.floor(Math.random() * c.length)](f) };
+      }
       case "mvp_respond_q":
         return { question: (MVP_LINES.respondQ[ctx.witness.id] || MVP_LINES.respondQ.future)(f) };
       case "mvp_respond": {
         const e = evaluate(ctx.answer);
-        return { ...e, acknowledge: MVP_LINES.respondAck(f) };
+        return { ...e, acknowledge: "" };
       }
       case "gift_check":
         return { question: MVP_LINES.giftCheck(f) };
