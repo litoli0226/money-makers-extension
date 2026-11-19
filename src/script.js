@@ -224,9 +224,9 @@
       head: "Court notice",
       // A summons from the court. The gas figure appears once, in the charge.
       kicker: "Summons",
-      charge: (g, what, price) => `You are charged with: possibly choosing ${what} over ${g ? g.text : `keeping ${price}`}.`,
-      body: () => "Plead your case and get the court's opinion before you buy.",
-      start: "Take it to court",
+      charge: (g, what, price) => `What makes ${what} more important than ${g ? g.text : `keeping ${price}`}, defendant?`,
+      body: () => "Get the court's opinion before you buy.",
+      start: "Plead my case",
       time: "2 min",
       skip: "Skip court",
       never: "Don't ask about this item",

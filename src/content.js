@@ -182,10 +182,19 @@
   // wait here and are written to history only if the defendant sets a savings
   // goal. Leave the page without one, and the court forgets the case.
   const guest = { on: false, pending: [], wish: [] };
+  // Guest mode is a fresh session every trial: a goal or savings from an
+  // earlier trial don't count. Only a goal set during this trial does.
   function startGuest(settings) {
-    guest.on = settings.guestHistory !== "keep" && !(settings.goalName && Number(settings.goalAmount) > 0);
+    guest.on = settings.guestHistory !== "keep";
+    guest.session = guest.on; // stays true for the whole trial, even after a goal is set
+    guest.goal = null;
     guest.pending = [];
     guest.wish = [];
+  }
+  // The profile an MVP screen should show: in guest mode, only this trial.
+  function mvpProfile(settings, history) {
+    if (guest.session) return { goal: guest.goal, saved: guest.saved || 0 };
+    return profileFrom(settings, history);
   }
   async function flushGuest() {
     if (!guest.on) return;
@@ -463,7 +472,7 @@
 
   // The judge's head, cropped from the cast figure, for chat avatars.
   let judgeFace = null;
-  const faceOf = (fig) => fig.replace('viewBox="0 0 64 64"', 'viewBox="10 3 44 44"');
+  const faceOf = (fig) => fig.replace('viewBox="0 0 64 64"', 'viewBox="12 5 40 40"');
   const judgeAv = () => (judgeFace ? `<span class="av face">${judgeFace}</span>` : `<span class="av judge">${ICON.scale}</span>`);
 
   // Gas: a pump, then one tank gauge per tank (at most 8), the last one filled
@@ -506,15 +515,18 @@
     const gas = usd ? G.gasEquivalent(item.total, gp.perGallon) : null;
     const noun = G.itemNoun(item.label); // "a candle", "headphones" or null
     const what =
-      item.items.length > 1 ? `these ${item.items.length} items` : !noun ? "this purchase" : /^an? /.test(noun) ? `this ${noun.replace(/^an? /, "")}` : `these ${noun}`;
+      item.items.length > 1 ? `these ${item.items.length} items` : !noun ? "this item" : /^an? /.test(noun) ? `this ${noun.replace(/^an? /, "")}` : `these ${noun}`;
     showCenteredPanel(`
       <button class="icon-btn notice-x" data-act="close" aria-label="Close">${ICON.x}</button>
       <div class="summons-head">
         <span class="av face ring">${faceOf(cast.judge)}</span>
         <b>${esc(N.kicker)}</b>
       </div>
+      <div class="evidence">
+        <span class="ev-price">${esc(price)}</span>
+        ${gas ? `<span class="gas-row" aria-hidden="true">${gasIcons(gas)}</span>` : ""}
+      </div>
       <h2 class="h2 charge">${esc(N.charge(gas, what, price))}</h2>
-      ${gas ? `<div class="evidence" aria-hidden="true"><span class="gas-row">${gasIcons(gas)}</span></div>` : ""}
       <p class="muted summons-body">${esc(N.body())}</p>
       <div class="stack">
         <button class="btn primary court-go" data-act="court"><span>${esc(N.start)}</span><span class="time">${ICON.clock}${esc(N.time)}</span></button>
@@ -546,7 +558,7 @@
   async function saveIt(item, settingsAtStart, historyAtStart, where, style, transcript = [], extra = {}) {
     // Read again: a goal may have been set since the trial started.
     const { settings, history } = await getStore();
-    const profile = profileFrom(settings, history); // before this save
+    const profile = extra.format === "mvp" ? mvpProfile(settings, history) : profileFrom(settings, history); // before this save
     const m = goalMath(profile, item);
     await logOutcome(item, "saved", { where, transcript, ...extra });
     await addToWishlist(item);
@@ -632,6 +644,7 @@
       const { settings } = await getStore();
       const goal = { name: name.value.trim(), amount: Number(amount.value) };
       await chrome.storage.local.set({ settings: { ...settings, goalName: goal.name, goalAmount: String(goal.amount) } });
+      if (guest.session) guest.goal = { name: goal.name, target: goal.amount, by: null };
       await flushGuest(); // a goal turns a guest's case into a kept case
       onDone ? onDone(goal) : clearUI();
     });
@@ -1332,7 +1345,7 @@
     const V = MVP_VERDICTS[verdict];
     // Read again: the goal may have just been set from this screen.
     const fresh = await getStore();
-    const profile = profileFrom(fresh.settings, fresh.history);
+    const profile = mvpProfile(fresh.settings, fresh.history);
     const hasGoal = !!profile.goal?.target;
     const price = money(item.total, item.currency);
     // With a goal, the verdict looks like the Figma "court rules" frame: the
@@ -1359,7 +1372,7 @@
     // The investment step: a goal for next time (the team's goal sheet, Figma 16.1).
     on("[data-act=goal]", async () => {
       const { history: h } = await getStore();
-      showGoalSheet(item, profileFrom(settings, h).saved, "page", (goal) =>
+      showGoalSheet(item, mvpProfile(settings, h).saved, "page", (goal) =>
         showMvpVerdict(item, settings, history, verdict, reason, signupLine, transcript, goal ? { ...meta, goal } : { ...meta, goalSkipped: true })
       );
     });
@@ -1803,19 +1816,17 @@ label input:focus { border-color: var(--blue); }
 .gas-note { font-size: 11px; color: var(--seal); }
 .panel.notice { position: relative; width: 360px; text-align: left; }
 .notice-x { position: absolute; top: 12px; right: 12px; }
-.panel.summons { border: 1px solid var(--paper); box-shadow: 0 0 0 5px var(--white), 0 0 0 6px var(--line), 0 18px 40px rgba(43,47,54,.18); }
-.summons-head { display: flex; align-items: center; gap: 12px; padding-right: 28px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-.summons-head .av.face { width: 44px; height: 44px; }
+.panel.summons { padding: 22px 24px 18px; gap: 14px; border: 1px solid var(--paper); box-shadow: 0 0 0 5px var(--white), 0 0 0 6px var(--line), 0 18px 40px rgba(43,47,54,.18); }
+.summons-head { display: flex; align-items: center; gap: 10px; padding-right: 28px; }
+.summons-head .av.face { width: 36px; height: 36px; }
 .av.face.ring { box-shadow: 0 0 0 2px var(--white), 0 0 0 3px var(--gold); }
-.summons-head > span:last-child { display: flex; flex-direction: column; gap: 2px; }
-.summons-head b { font-size: 12px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--gold-deep); }
-.summons-head small { font-size: 12px; color: var(--seal); }
-.charge { margin: 0; font-size: 21px; line-height: 1.3; text-align: left; }
-.evidence { display: flex; flex-direction: column; gap: 6px; }
-.evidence .gas-row { justify-content: flex-start; }
-.evidence .tank { width: 30px; height: 16px; }
-.evidence small { font-size: 11px; color: var(--seal); }
-.summons-body { margin: 0; text-align: left; }
+.summons-head b { font-size: 12px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: var(--gold-deep); }
+.evidence { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: var(--white); border: 1px solid var(--line); border-radius: 12px; }
+.ev-price { font-size: 22px; font-weight: 700; color: var(--ink); letter-spacing: -.01em; }
+.evidence .gas-row { justify-content: flex-end; }
+.evidence .tank { width: 28px; height: 15px; }
+.charge { margin: 2px 0 0; font-size: 20px; line-height: 1.3; text-align: left; text-wrap: balance; }
+.summons-body { margin: -6px 0 2px; text-align: left; font-size: 14px; }
 .notice-never { align-self: center; text-align: center; }
 .notice-privacy { margin: 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.45; color: var(--seal); text-align: left; }
 .notice-privacy a { color: var(--blue); text-decoration: underline; }

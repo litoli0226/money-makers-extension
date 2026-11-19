@@ -69,10 +69,10 @@
     ["short-grey-s3", "s3", "short", "grey", true],
   ];
 
-  // Flat figure in the design-system palette. The head is drawn at 1.4x and
-  // the body at 0.8x, so the head reads bigger than the body.
-  const HEAD_T = "translate(32 27) scale(1.4) translate(-32 -25)";
-  const BODY_T = "translate(32 64) scale(0.8) translate(-32 -64)";
+  // Flat figure in the design-system palette. The head is drawn at 1.25x and
+  // the body at 0.88x, so the head reads bigger than the body.
+  const HEAD_T = "translate(32 26.5) scale(1.25) translate(-32 -25)";
+  const BODY_T = "translate(32 64) scale(0.88) translate(-32 -64)";
   const person = (body, extra = "", top = "", skin = SKIN.s2) => {
     const ink = inkFor(skin);
     // Big head, small body: the face carries the expression.
