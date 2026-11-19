@@ -227,7 +227,7 @@
       charge: (g, what, price) => `What makes ${what} more important than ${g ? g.text : `keeping ${price}`}, defendant?`,
       body: () => "Get the court's opinion before you buy.",
       start: "Plead my case",
-      time: "2 min",
+      time: "3 min",
       skip: "Skip court",
       never: "Don't ask about this item",
       // Just-in-time privacy notice (Chrome Web Store "prominent disclosure"):
@@ -247,8 +247,11 @@
     // A non-answer ("um", "idk") gets its own line: the judge heard it.
     nonAnswer: (said) => `"${said}" is not something the court can write down.`,
     objectionAgain: "Walk the court through it: when and where will you use it?",
+    objectionGift: (f) => `Walk the court through it: when will ${f.recipientObj === "them" ? "they" : f.recipientObj === "her" ? "she" : "he"} use it, and how?`,
+    // Bridge from the how answer to the witness, so the expert has a reason to be there.
+    bridge: "The court would like an expert's view on that.",
     acknowledge: {
-      mechanism: () => "A plan, not just a wish. Noted for the record.",
+      mechanism: () => "A plan, not just a wish.",
       reason: () => "The court has heard why. It will have to do.",
       unclear: () => "The court will take that as it is.",
     },
@@ -269,10 +272,12 @@
     // The expert witness gives information, never tells the judge what to ask.
     witness: {
       research: {
+        topic: (f) => (f.gift ? "an expert on gift-giving" : "an expert on how people decide what to buy"),
         charge: (f) =>
-          f.gift ? "Witness, does spending on someone else do anything for the person paying?" : `Witness, what do the studies say about buying ${f.it}?`,
+          f.lastQuote ? `Witness, the defendant says "${f.lastQuote}${f.lastQuote.endsWith("…") ? "" : "."}" What does the research say?` : `Witness, what does the research say about ${f.it}?`,
       },
       usage: {
+        topic: () => "an expert on cost per use",
         charge: (f) => `Witness, the defendant plans to use ${f.it} ${f.freqWords}. What does that come to?`,
         for: [(f) => `Used ${f.freqWords}, ${f.price} comes to about ${f.perUsePlan} a use over a year.`],
         against: [(f) => `Used ${f.freqWords}, it's about ${f.perUsePlan} a use. If that slips to once a week, it's ${f.perUseWeekly}.`],
@@ -298,11 +303,28 @@
         against: [() => "It left quietly. I never heard from it again."],
       },
     },
-    // One last turn before deliberation. Charged and short.
+    // The arc after the witness (each step names its research):
+    //  1. advocacy: the defendant advises a friend in the same spot. First half
+    //     of hypocrisy induction (Aronson, Fried & Stone 1991; Stone et al. 1994:
+    //     advocate a standard, then be made mindful of your own lapses).
+    //  2. values: the judge holds them to their own advice (Cialdini's
+    //     consistency) and asks what else the money could do, inside a value
+    //     they hold (opportunity cost cues: Frederick et al. 2009).
+    //  3. closing: the court says it's about to deliberate and asks a calibrated
+    //     "what" question (Voss), so the defendant can sway the ruling once more.
+    advocacy: {
+      gift: (f) => `Defendant, say a friend is about to spend ${f.price} on ${f.noun} for ${f.theirRecipient}. What do you tell them?`,
+      usage: (f) => `Defendant, say a friend swears they'll use ${f.noun} ${f.freqWords}. What do you tell them?`,
+      other: (f) => `Defendant, say a friend is about to spend ${f.price} on ${f.noun}. What do you tell them?`,
+    },
+    values: {
+      gift: (f) => `${f.adviceLine}You want to be good to ${f.recipientObj}. What else could ${f.price} do for ${f.recipientObj}?`,
+      other: (f) => `${f.adviceLine}What else could ${f.price} do for you, or for someone you care about, this month?`,
+    },
+    // One last turn before deliberation: a calibrated "what" question.
     closing: [
-      () => "Closing argument, defendant. One sentence: why this, and why now?",
-      () => "Last question. If it cost twice as much, would you still want it?",
-      (f) => `Last question. Would you rather have ${f.it}, or ${f.price} back next month?`,
+      () => "The court is about to deliberate. What should it weigh most before it decides?",
+      (f) => `The court is about to deliberate. What would have to be true for ${f.it} to be worth ${f.price}?`,
     ],
     respondQ: {
       research: (f) => (f.gift ? "Defendant, is this gift for them, or for you?" : "Ah, but that must be different for you, right, defendant?"),
@@ -315,8 +337,10 @@
     giftCheck: (f) => `Mmm... ${f.defendant} buys for the other Moneybags. If this is a gift, that changes the verdict.`,
     reason: {
       approve: (f) => `${f.bestQuote ? `You said "${f.bestQuote}" and backed it up.` : "You made your case and backed it up."} Case approved.`,
-      sleep: (f) => `Your case has a point, but not a finished one. Sleep on it: ${f.the} will still be here tomorrow.`,
-      denied: (f) => `Your case sounded more like a want than a need right now. That's ${f.price} you keep.`,
+      sleep: (f) =>
+        f.advice ? `${f.adviceSaid} Sleep on it, and take your own advice. ${f.The} will still be here tomorrow.` : `Your case has a point, but not a finished one. Sleep on it: ${f.the} will still be here tomorrow.`,
+      denied: (f) =>
+        f.advice ? `${f.adviceSaid} The court is taking your advice. That's ${f.price} you keep.` : `Your case sounded more like a want than a need right now. That's ${f.price} you keep.`,
     },
     // The invitation at the end: set a goal so the court can hold you to it.
     // It opens the team's goal sheet (Figma 16.1). Built from the trial.
@@ -341,14 +365,34 @@
     const t = String(text || "").trim();
     const words = t.split(/\s+/).filter(Boolean).length;
     if (words < 4) return "unclear";
+    // "I'll give it to my girlfriend" names who, not how: a reason until it
+    // says when or how often (SPEC), so the judge presses for the mechanism.
+    if (RECIPIENT.test(t.toLowerCase()) && !SPEC.test(t)) return "reason";
     return (MECH.test(t) && words >= 6) || SPEC.test(t) ? "mechanism" : "reason";
   }
 
+  const RECIPIENT = /\b(?:for|to)\s+my\s+(girlfriend|boyfriend|partner|wife|husband|fianc[eé]e?|mom|mother|dad|father|sister|brother|friend|best friend|roommate|grandma|grandmother|grandpa|grandfather|boss|son|daughter|kid|cousin|aunt|uncle)\b/;
+  const PRONOUN = { girlfriend: "her", wife: "her", mom: "her", mother: "her", sister: "her", grandma: "her", grandmother: "her", daughter: "her", aunt: "her", fiancee: "her", "fiancée": "her",
+    boyfriend: "him", husband: "him", dad: "him", father: "him", brother: "him", grandpa: "him", grandfather: "him", son: "him", uncle: "him", fiance: "him", "fiancé": "him" };
+  // "honestly I'd tell them to skip it" -> "You'd tell a friend to skip it."
+  // Anything else is quoted as said.
+  function youdTell(advice) {
+    const a = advice.replace(/^(honestly|well|um+|i mean|probably|i guess)[,\s]+/i, "");
+    const m = a.match(/^(?:i'?d|i would|i'd probably|i would probably)\s+(?:tell|say to|advise)\s+(?:them|him|her|my friend|the friend)\s*(?:that\s+)?(.+)$/i);
+    if (m) return `You'd tell a friend ${m[1]}.`;
+    return `You'd tell a friend: "${a}."`;
+  }
   function mvpFacts(ctx) {
     const f = facts(ctx);
     const t = ctx.title ? `${ctx.title} Moneybags` : "Moneybags";
     const the = f.the === "the " ? "this item" : f.the;
     const answers = ctx.answers || [];
+    // Who a gift is for, from their words ("for my girlfriend").
+    const rx = [...answers.map((a) => a.text), ctx.answer].map((t) => String(t || "").toLowerCase().match(RECIPIENT)).find(Boolean);
+    const who = rx ? rx[1] : null;
+    const pron = who ? PRONOUN[who] || "them" : "them";
+    const nounRaw = globalThis.gicPrices?.itemNoun(ctx.item?.label) || "this item";
+    const advice = ctx.advice ? String(ctx.advice).trim().replace(/[.!?]+$/, "").slice(0, 90) : "";
     // Usage math from the defendant's own words ("every night").
     const fr = answers.map((a) => frequency(a.text)).find(Boolean);
     const total = ctx.item?.total;
@@ -359,11 +403,24 @@
       the,
       The: the.charAt(0).toUpperCase() + the.slice(1),
       it: f.it === "the " ? "this item" : f.it,
-      gift: answers.some((a) => a.claim === "gift"),
+      gift: answers.some((a) => a.claim === "gift") || !!who,
+      noun: nounRaw,
+      theirRecipient: who ? `their ${who}` : "someone they care about",
+      recipientObj: who ? pron : "them",
+      adviceLine: advice ? `${youdTell(advice)} The court will hold you to that. ` : "",
+      adviceSaid: advice ? youdTell(advice) : "",
+      advice,
       freq: fr,
       freqWords: fr ? fr.words : "regularly",
       perUsePlan: fr && total ? cents(total / fr.perYear) : "",
       perUseWeekly: total ? cents(total / 52) : "",
+      lastQuote: (() => {
+        const a = [...answers].reverse().find((x) => x.text && x.claim !== "vague");
+        if (!a) return "";
+        const t = String(a.text).trim().replace(/[.!?]+$/, "");
+        if (t.length <= 60) return t;
+        return `${t.slice(0, 60).replace(/[\s,;]+\S*$/, "")}…`; // cut at a word, not mid-word
+      })(),
     };
   }
 
@@ -424,7 +481,8 @@
         if (ctx.objection_allowed && kind !== "mechanism") {
           const said = String(ctx.answer || "").trim().replace(/[.!?]+$/, "").slice(0, 40);
           const first = kind === "unclear" && said ? MVP_LINES.nonAnswer(said) : MVP_LINES.objection;
-          return { kind, ...e, acknowledge: "", objection: `${first} ${MVP_LINES.objectionAgain}` };
+          const again = f.gift || e.claim === "gift" ? MVP_LINES.objectionGift(f) : MVP_LINES.objectionAgain;
+          return { kind, ...e, acknowledge: "", objection: `${first} ${again}` };
         }
         const fu = MVP_LINES.followup[e.claim] || MVP_LINES.followup.other;
         const ack = ctx.second ? MVP_LINES.secondAck[(ctx.answers || []).length % MVP_LINES.secondAck.length] : MVP_LINES.acknowledge[kind](f);
@@ -437,7 +495,7 @@
         if (ctx.witness.id === "research") {
           const claims = (ctx.answers || []).map((a) => a.claim);
           // The latest argument decides the finding ("it's a gift" after "it smells nice" -> the gifts study).
-          const fd = globalThis.gicFindings.findingFor([...claims].reverse().find((c) => c !== "vague") || "vague");
+          const fd = globalThis.gicFindings.findingFor(f.gift ? "gift" : [...claims].reverse().find((c) => c !== "vague") || "vague");
           return { says: fd.line, cite: fd.cite, url: fd.url };
         }
         const W = MVP_LINES.witness[ctx.witness.id];
@@ -451,10 +509,30 @@
         const c = MVP_LINES.closing;
         return { question: c[Math.floor(Math.random() * c.length)](f) };
       }
+      case "mvp_bridge":
+        return { line: MVP_LINES.bridge };
+      case "mvp_topic":
+        return { topic: (MVP_LINES.witness[ctx.witness.id].topic || (() => "an expert witness"))(f) };
+      case "mvp_advocacy_q":
+        return { question: (f.gift ? MVP_LINES.advocacy.gift : f.freq ? MVP_LINES.advocacy.usage : MVP_LINES.advocacy.other)(f) };
+      case "mvp_values_q":
+        return { question: (f.gift ? MVP_LINES.values.gift : MVP_LINES.values.other)(f) };
       case "mvp_respond_q":
         return { question: (MVP_LINES.respondQ[ctx.witness.id] || MVP_LINES.respondQ.future)(f) };
       case "mvp_respond": {
         const e = evaluate(ctx.answer);
+        const t = String(ctx.answer || "").toLowerCase();
+        // Advocacy: advice to wait argues against their own purchase (the court
+        // will hold them to it); advice to go ahead, with a condition, supports it.
+        if (ctx.step === "advocacy" && e.engaged) {
+          if (/\b(wait|don'?t|do not|skip|sleep on|think (about|twice)|hold off|save|no(t)? (worth|now)|return|cheaper)\b/.test(t)) return { ...e, strength: "weak", acknowledge: "" };
+          if (/\b(go for it|buy it|get it|do it|worth it|treat yourself|why not)\b/.test(t)) return { ...e, strength: "good", acknowledge: "" };
+        }
+        // Values: naming something else the money could do is a point against.
+        if (ctx.step === "values" && e.engaged) {
+          if (/\b(nothing|not much|this is (it|the best)|she (wants|asked)|he (wants|asked)|they (want|asked)|asked for)\b/.test(t)) return { ...e, strength: "good", acknowledge: "" };
+          if (/\b(could|would|dinner|date|trip|save|saving|groceries|rent|experience|flowers|time|ticket|concert)\b/.test(t)) return { ...e, strength: "weak", acknowledge: "" };
+        }
         return { ...e, acknowledge: "" };
       }
       case "gift_check":

@@ -89,7 +89,7 @@ Set "kind":
 - "reason": they say why they want it, without how ("I need these, my roommate is loud", "it's on sale", "I deserve it").
 - "unclear": too short or off-topic to tell.
 Score "strength", "engaged", "unsure" and "claim" exactly as in the answer stage rubric: strength is strong, good, neutral, weak or impulse; claim is need, usage, price, learn, gift, treat, want or vague. A mechanism with specifics counts as strong or good.
-If "objection_allowed" is true and kind is not "mechanism": write "objection". If kind is "reason", tell them you asked how, not why, in one sentence (for example "Not why, defendant. I asked how."). If kind is "unclear" (a non-answer such as "um", "idk", "it's nice"), don't say "not why": show you heard exactly what they wrote and that it can't go on the record (for example: "'Um' is not something the court can write down."). Either way, then ask once more, plainly, for when and where they'll use it. Leave "acknowledge" empty.
+If "objection_allowed" is true and kind is not "mechanism": write "objection". If kind is "reason", tell them you asked how, not why, in one sentence (for example "Not why, defendant. I asked how."). If kind is "unclear" (a non-answer such as "um", "idk", "it's nice"), don't say "not why": show you heard exactly what they wrote and that it can't go on the record (for example: "'Um' is not something the court can write down."). Either way, then ask once more, plainly, for when and where they'll use it (for a gift: when and how the person receiving it will use it). Leave "acknowledge" empty.
 Otherwise: write "acknowledge": one short sentence reacting to the answer, without repeating it back. Leave "objection" empty. If "second" is true, this was their second answer: vary the acknowledgment and don't praise.
 Always write "followup": one short question that pins down a number or a moment in their answer (how often, when first, for whom, what happens if they skip it). It's only shown when there was no objection. You may open it with a few dry words reacting to the answer, if they're funny; no filler like "Noted."
 Set "flag" to "violent", "hateful", "sexual" or "self_harm" if the answer contains that kind of content (threats or violence toward people, slurs or hate toward a group, sexual content, thoughts of self-harm), otherwise "none".`,
@@ -107,7 +107,7 @@ Set "flag" to "violent", "hateful", "sexual" or "self_harm" if the answer contai
   },
   mvp_charge: {
     who: "judge",
-    task: `Stage: mvp_charge. You are calling the witness in "witness" (name and role) to the stand. Ask the witness one charged question, one sentence, addressed to them by name ("Wallet, ..."), that puts this purchase on the line: the price, the plan the defendant gave, or what happens after the box is opened. Don't hint at what the witness will say.`,
+    task: `Stage: mvp_charge. You are calling the expert witness in "witness" (name and role) to the stand. Ask the witness one question, one sentence, beginning "Witness," that quotes a few words the defendant said (their most recent answer) and asks what the research or the math says about it. Example: Witness, the defendant says "it's for my girlfriend's birthday." What does the research say? Don't hint at what the witness will say.`,
     schema: { question: "string" },
   },
   mvp_witness: {
@@ -120,8 +120,11 @@ Otherwise set "finding_id" to "none" (simple arithmetic from the case file is fi
   },
   mvp_respond: {
     who: "judge",
-    task: `Stage: mvp_respond. The defendant just responded to the expert witness ("answer" in the case file).
-Score "strength", "engaged", "unsure" and "claim" as in the answer stage rubric.
+    task: `Stage: mvp_respond. The defendant just answered the judge ("question" and "answer" in the case file; "step" says which question).
+Score "strength", "engaged", "unsure" and "claim" as in the answer stage rubric, with these steps:
+- "advocacy" (what they'd tell a friend in the same spot): advice to wait, skip or think it over is "weak" (it argues against their own purchase); advice to go ahead, with a reason, is "good".
+- "values" (what else the money could do for the person they care about): naming another use for the money is "weak"; explaining why this item is still the best use is "good" or "strong".
+- "closing" (what the court should weigh before deliberating): score as a normal answer.
 Leave "acknowledge" empty (the court goes straight to deliberation).
 Set "flag" as in mvp_how: "violent", "hateful", "sexual", "self_harm" or "none".`,
     schema: {
@@ -140,7 +143,7 @@ Set "flag" as in mvp_how: "violent", "hateful", "sexual", "self_harm" or "none".
   },
   mvp_verdict: {
     who: "judge",
-    task: `Stage: mvp_verdict. Write "reason": one line explaining the ruling, drawn from what the defendant said. When the case held up, quote a few words of their "how" (the plan for using it), not their reason for wanting it.
+    task: `Stage: mvp_verdict. Write "reason": one line explaining the ruling, drawn from what the defendant said. When the case held up, quote a few words of their "how" (the plan for using it), not their reason for wanting it. When the ruling is sleep or denied and "advice" is set (what they said they'd tell a friend), turn that advice back on them ("You'd tell a friend to wait.") and say the court is taking it.
 If "verdict_by" is "rule", the ruling is already in "verdict" (approve, sleep or denied); never contradict it.
 If "verdict_by" is "model", pick "verdict" yourself: "approve" when they gave a concrete plan for using it, "denied" when it was clearly an impulse, "sleep" otherwise. When unsure, pick "sleep".
 Write "signup": one or two sentences inviting them to set a savings goal for next time, so the court can hold them accountable. Personalize it from this trial: name the item and its price, or refer to their plan without repeating the quote already in "reason" (for a gift: gifts add up; for sleep: weigh the item against the goal; for denied: the money is still theirs). Don't say "sign up" or ask for an email. A "Set my goal" button appears under it.`,

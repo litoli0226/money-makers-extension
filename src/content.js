@@ -1026,16 +1026,16 @@
     // Time-left bar: an estimate in steps, not a running clock. It only moves
     // forward; an objection adds time to the estimate but never empties the bar.
     // Seconds per step (rough; tune after timing testers, R3).
-    const EST = { name: 8, how: 30, objection: 25, followup: 20, gift: 8, witness: 14, respond: 25, closing: 20, deliberate: 8 };
+    const EST = { name: 8, how: 30, objection: 25, gift: 8, witness: 14, advocacy: 20, values: 20, closing: 20, deliberate: 8 };
     // Two "how" answers before the witness, either way: an objection retry or a follow-up.
-    const eta = { done: 0, left: ["name", "how", "followup", "witness", "respond", "closing", "deliberate"], shown: 0 };
+    const eta = { done: 0, left: ["name", "how", "witness", "advocacy", "values", "closing", "deliberate"], shown: 0 };
     function drawEta(label) {
       const leftSec = eta.left.reduce((t, k) => t + EST[k], 0);
       const frac = eta.done / (eta.done + leftSec || 1);
       eta.shown = Math.max(eta.shown, frac);
       $("#etaFill").style.width = `${Math.round(eta.shown * 100)}%`;
       $("#etaText").textContent =
-        label || (leftSec > 60 ? "About 2 minutes left" : leftSec > 25 ? "About 1 minute left" : leftSec > 10 ? "Under a minute left" : "Almost done");
+        label || (leftSec > 100 ? "About 2 minutes left" : leftSec > 60 ? "Under 2 minutes left" : leftSec > 25 ? "About 1 minute left" : leftSec > 10 ? "Under a minute left" : "Almost done");
     }
     const stepDone = (k) => {
       const i = eta.left.indexOf(k);
@@ -1138,6 +1138,7 @@
       answers: state.answers,
       title: state.title,
       defendant_name: state.title ? `${state.title} Moneybags` : "Moneybags",
+      advice: state.advice || "",
       ...extra,
     });
     async function ask(stage, extra, who = "judge") {
@@ -1279,12 +1280,22 @@
       return r;
     };
 
+    // The trial is one story in four beats, each from the research:
+    //  3. how: the mechanism. A reason ("it's for my girlfriend") draws one
+    //     objection that presses for the mechanism (Fernbach et al. 2013).
+    //  4. the expert witness, called on the topic the defendant raised, quoting them.
+    //  5. advocacy: what would you tell a friend? (hypocrisy induction, first half)
+    //  6. values: you'd want to be good to her; what else could $X do for her?
+    //     (consistency with their own advice + an opportunity-cost cue)
+    //  7. closing: the court says it's about to deliberate and asks a calibrated
+    //     "what" question, so the defendant gets one last say.
+
     // ----- 3. Objection, once, only after a reason (R7) -----
     let r1 = await howAnswer(true);
     if (state.left) return;
+    stepDone("how");
     if (flow.mvpAfterHow(state, r1.kind) === "object" && r1.objection) {
       state.objected += 1;
-      stepDone("how");
       stepAdd("objection");
       judgeSpot.classList.add("eyebrow"); // set_expression: eyebrow_raised
       moment(r1.kind === "unclear" ? "The judge waits. The pen does not move." : "The judge sets down the pen. One eyebrow rises.");
@@ -1292,19 +1303,16 @@
       say("judge", r1.objection, { question: true });
       r1 = await howAnswer(false);
       stepDone("objection");
-      stepDrop("followup"); // the retry was the second answer
       judgeSpot.classList.remove("eyebrow");
       if (state.left) return;
-    } else if (r1.followup) {
-      // No objection: one follow-up first, so the witness doesn't arrive after a single answer.
-      stepDone("how");
-      say("judge", r1.followup, { question: true });
-      r1 = await howAnswer(false);
-      stepDone("followup");
-      if (state.left) return;
     }
-    stepDone("how"); // no-op if already counted
-    stepDrop("followup");
+
+    // The judge reacts to a plan given on the first try; after an objection the
+    // bridge below is enough (no "noted" filler).
+    if (!state.objected && String(r1.acknowledge || "").trim()) {
+      say("judge", r1.acknowledge);
+      await readPause(r1.acknowledge);
+    }
 
     // ----- optional: gift buttons (C4 switch) -----
     if (settings.giftButtons === "on" && state.answers.some((a) => a.claim === "gift")) {
@@ -1317,14 +1325,21 @@
       stepDone("gift");
     }
 
-    // ----- 4. Witness, every trial: drawn at random (never the same as last
-    // trial), with a random stance; the judge puts a charged question first -----
+    // Bridge: says why an expert is coming.
+    {
+      const line = globalThis.gicScriptedMvp("mvp_bridge", ctx()).line;
+      say("judge", line);
+      await readPause(line);
+      if (state.left) return;
+    }
+
+    // ----- 4. Expert witness, called on the defendant's own topic -----
     const { lastWitness = null } = await chrome.storage.local.get({ lastWitness: null });
     state.witness = flow.mvpPickWitness(state, lastWitness);
     chrome.storage.local.set({ lastWitness: state.witness.id });
     log("Witness:", state.witness.id, state.witness.stance);
-    const callName = { wallet: "your wallet", item: "the item itself", future: "Future you" }[state.witness.id] || `the ${state.witness.name.toLowerCase()}`;
-    moment(`The doors open. The court calls ${callName} to the stand.`);
+    const topic = globalThis.gicScriptedMvp("mvp_topic", ctx({ witness: state.witness })).topic;
+    moment(`The doors open. The court calls ${topic} to the stand.`);
     const stand = scene.querySelector(".spot.witness");
     stand.classList.add("called");
     stand.querySelector(".plate").textContent = state.witness.name;
@@ -1339,34 +1354,43 @@
     stepDone("witness");
     if (state.left) return;
 
-    // ----- 5. Respond to the witness (skipped after an objection if C1 (b) is on) -----
-    if (!flow.mvpAskRespond(state, settings)) stepDrop("respond");
-    if (flow.mvpAskRespond(state, settings)) {
-      const q = await ask("mvp_respond_q", { witness: state.witness });
-      say("judge", q.question, { question: true });
-      const a = await askText("Your response");
-      let r = await ask("mvp_respond", { answer: a });
+    // One scored turn: the judge asks, the defendant answers, flags are struck.
+    const turn = async (step, question, placeholder) => {
+      say("judge", question, { question: true });
+      let a = await askText(placeholder);
+      let r = await ask("mvp_respond", { answer: a, question, step });
       while (r.flag && r.flag !== "none") {
         await aiStrike(r.flag);
-        r = await ask("mvp_respond", { answer: await askText("Your response") });
+        a = await askText(placeholder);
+        r = await ask("mvp_respond", { answer: a, question, step });
       }
-      state.answers.push({ text: a, strength: r.strength, engaged: r.engaged !== false, unsure: !!r.unsure, claim: r.claim });
-      stepDone("respond");
+      state.answers.push({ text: a, strength: r.strength, engaged: r.engaged !== false, unsure: !!r.unsure, claim: r.claim, step });
+      log(`${step}:`, r.strength, "score", flow.score(state));
+      stepDone(step);
+      return { a, r };
+    };
+
+    // ----- 5. Advocacy: the defendant advises a friend in the same spot -----
+    {
+      await wait(300);
+      const { question } = globalThis.gicScriptedMvp("mvp_advocacy_q", ctx());
+      const { a, r } = await turn("advocacy", question, "What you'd tell them");
+      if (r.engaged !== false) state.advice = a;
     }
     if (state.left) return;
 
-    // ----- 5b. Closing: one more turn before the court deliberates -----
+    // ----- 6. Values: held to their advice, inside something they care about.
+    // Skipped after an objection when the C1 switch is on, to keep it short. -----
+    if (flow.mvpAskRespond(state, settings)) {
+      const { question } = globalThis.gicScriptedMvp("mvp_values_q", ctx());
+      await turn("values", question, "Your answer");
+    } else stepDrop("values");
+    if (state.left) return;
+
+    // ----- 7. Closing: the court signals deliberation, one last say -----
     {
-      const q = globalThis.gicScriptedMvp("mvp_closing_q", ctx());
-      say("judge", q.question, { question: true });
-      let r = await ask("mvp_respond", { answer: await askText("Your closing argument") });
-      while (r.flag && r.flag !== "none") {
-        await aiStrike(r.flag);
-        r = await ask("mvp_respond", { answer: await askText("Your closing argument") });
-      }
-      const last = transcript.filter((t) => t.role === "defendant").pop();
-      state.answers.push({ text: last?.text || "", strength: r.strength, engaged: r.engaged !== false, unsure: !!r.unsure, claim: r.claim });
-      stepDone("closing");
+      const { question } = globalThis.gicScriptedMvp("mvp_closing_q", ctx());
+      await turn("closing", question, "Your last word to the court");
     }
     if (state.left) return;
 

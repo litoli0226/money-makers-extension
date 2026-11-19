@@ -20,6 +20,20 @@
       url: "https://www.sciencedaily.com/releases/2008/03/080320150034.htm",
     },
     {
+      id: "gift-price",
+      fits: ["gift"],
+      line: "Givers expect a pricier gift to be appreciated more. Recipients in the same studies reported no link between what a gift cost and how much they appreciated it.",
+      cite: "Flynn & Adams (2009), Journal of Experimental Social Psychology",
+      url: "https://www.gsb.stanford.edu/insights/research-confirms-its-thought-counts",
+    },
+    {
+      id: "gift-requested",
+      fits: ["gift"],
+      line: "Givers think an unrequested gift is more thoughtful. Recipients appreciated the gifts they had asked for more.",
+      cite: "Gino & Flynn (2011), Journal of Experimental Social Psychology",
+      url: "https://www.gsb.stanford.edu/news/research/flynn_giving_2011.html",
+    },
+    {
       id: "explaining",
       fits: ["need", "usage", "learn", "price"],
       line: "When shoppers explained how a product works, some wanted to pay less for it afterward. Others wanted to pay more.",
@@ -28,7 +42,12 @@
     },
   ];
 
-  const findingFor = (claim) => FINDINGS.find((f) => f.fits.includes(claim)) || FINDINGS[0];
+  // Several findings can fit one claim (gifts); pick one at random so repeat
+  // trials don't hear the same study.
+  const findingFor = (claim, rand = Math.random) => {
+    const fit = FINDINGS.filter((f) => f.fits.includes(claim));
+    return fit.length ? fit[Math.floor(rand() * fit.length)] : FINDINGS[0];
+  };
 
   globalThis.gicFindings = { FINDINGS, findingFor };
 })();
