@@ -233,10 +233,12 @@
       never: "Don't ask about this item",
       // Disclosure. Keep it true to the code: see "What the court keeps" in README.
       keepsLabel: "What the court keeps",
-      keeps: (ai) =>
+      keeps: (ai, guest) =>
         [
           "No account or sign-up needed.",
-          "This browser keeps the item, its price, what you type, the verdict and how long the trial took, so you can look back at your cases. Nothing goes to Amazon or to our team.",
+          guest
+            ? "As a guest, the court forgets this case when you leave. If you set a savings goal at the end, this browser keeps your cases (item, price, what you type, verdict) so the court can hold you to it. Nothing goes to Amazon or to our team."
+            : "This browser keeps the item, its price, what you type, the verdict and how long the trial took, so you can look back at your cases. Nothing goes to Amazon or to our team.",
           ai
             ? `To write the judge's lines, your answers, the item and its price are sent to ${ai}. Nothing else is sent.`
             : "The judge's lines are written by the extension itself. Nothing you type leaves this browser.",
@@ -244,10 +246,13 @@
         ],
     },
     name: "Forgive me, what's your name, defendant?",
-    item: (f) => `${f.defendant}, the court has your case: ${f.the}, for ${f.price}.`,
+    // "We are here in the matter of ..." is how real judges open a hearing.
+    item: (f) => `We are here in the matter of ${f.defendant} v. ${f.the}, ${f.price}.`,
     how: (f) => `And how will ${f.it} make your life better, defendant?`,
     howPlaceholder: "How, exactly: when, where, how often you'll use it",
     objection: "Not why, defendant. I asked how.",
+    // A non-answer ("um", "idk") gets its own line: the judge heard it.
+    nonAnswer: (said) => `"${said}" is not something the court can write down.`,
     objectionAgain: "Walk the court through it: when and where will you use it?",
     acknowledge: {
       mechanism: () => "A plan, not just a wish. Noted for the record.",
@@ -313,11 +318,14 @@
       sleep: (f) => `Your case has a point, but not a finished one. Sleep on it: ${f.the} will still be here tomorrow.`,
       denied: (f) => `Your case sounded more like a want than a need right now. That's ${f.price} you keep.`,
     },
+    // The invitation at the end: set a goal so the court can hold you to it.
+    // It opens the team's goal sheet (Figma 16.1). Built from the trial.
     signup: {
-      gift: () => "Sign up, and I'll help you keep track of your gifts.",
-      approve: () => "Sign up, and the court will keep a record of your wins.",
-      sleep: (f) => `Sign up, and I'll remind you about ${f.the} in a week.`,
-      denied: () => "Sign up, and I'll show you what you've kept.",
+      gift: (f) => `Gifts add up. Set a savings goal, and next time the court will weigh ${f.price} gifts against it.`,
+      // The ruling above already quotes them, so this line doesn't repeat it.
+      approve: (f) => `You came with a plan for ${f.the}. Set a savings goal, and next time I'll hold you to plans like that one.`,
+      sleep: (f) => `Sleep on ${f.the}. Set a savings goal tonight, and next time the court will weigh ${f.price} against it.`,
+      denied: (f) => `That's ${f.price} still yours. Set a savings goal, and the court will keep count.`,
     },
   };
 
@@ -376,7 +384,9 @@
         const kind = howKind(ctx.answer);
         const e = scoreHow(ctx.answer, kind);
         if (ctx.objection_allowed && kind !== "mechanism") {
-          return { kind, ...e, acknowledge: "", objection: `${MVP_LINES.objection} ${MVP_LINES.objectionAgain}` };
+          const said = String(ctx.answer || "").trim().replace(/[.!?]+$/, "").slice(0, 40);
+          const first = kind === "unclear" && said ? MVP_LINES.nonAnswer(said) : MVP_LINES.objection;
+          return { kind, ...e, acknowledge: "", objection: `${first} ${MVP_LINES.objectionAgain}` };
         }
         const fu = MVP_LINES.followup[e.claim] || MVP_LINES.followup.other;
         const ack = ctx.second ? MVP_LINES.secondAck[(ctx.answers || []).length % MVP_LINES.secondAck.length] : MVP_LINES.acknowledge[kind](f);
@@ -415,7 +425,7 @@
         const gift = ctx.gift === true || (ctx.gift == null && (ctx.answers || []).some((a) => a.claim === "gift"));
         return {
           reason: MVP_LINES.reason[v]({ ...f, bestQuote: f2.bestQuote }),
-          signup: gift ? MVP_LINES.signup.gift(f) : MVP_LINES.signup[v](f),
+          signup: gift ? MVP_LINES.signup.gift(f) : MVP_LINES.signup[v]({ ...f, bestQuote: f2.bestQuote }),
         };
       }
     }

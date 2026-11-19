@@ -76,7 +76,7 @@ const MVP_STAGES = {
   mvp_item: {
     who: "judge",
     task: `Stage: mvp_item. The defendant just gave their title; call them by "defendant_name".
-Write "line": one sentence that names the defendant, the item (item.short) and its price.
+Write "line": one sentence that opens the hearing the way real judges do, "We are here in the matter of <defendant_name> v. the <item.short>, <price>."
 Write "price_line": one short line about the price, built from "price_match" in the case file.
 - If price_match.kind is "table": say the price is about that many of price_match.row.thing (or about half of it if price_match.half is true). Use the word "about". Use no other prices.
 - If price_match.kind is "anecdote": tell a one-line made-up story about your own past in the spirit of price_match.template (for example buying Apple stock back in the day). Never claim a real price for anything else. This one story about yourself is allowed even though you never invent facts, prices or statistics anywhere else.
@@ -91,7 +91,7 @@ Set "kind":
 - "reason": they say why they want it, without how ("I need these, my roommate is loud", "it's on sale", "I deserve it").
 - "unclear": too short or off-topic to tell.
 Score "strength", "engaged", "unsure" and "claim" exactly as in the answer stage rubric: strength is strong, good, neutral, weak or impulse; claim is need, usage, price, learn, gift, treat, want or vague. A mechanism with specifics counts as strong or good.
-If "objection_allowed" is true and kind is not "mechanism": write "objection": tell them you asked how, not why, in one sentence (for example "Not why, defendant. I asked how."), then ask once more, plainly, for when and where they'll use it. Leave "acknowledge" empty.
+If "objection_allowed" is true and kind is not "mechanism": write "objection". If kind is "reason", tell them you asked how, not why, in one sentence (for example "Not why, defendant. I asked how."). If kind is "unclear" (a non-answer such as "um", "idk", "it's nice"), don't say "not why": show you heard exactly what they wrote and that it can't go on the record (for example: "'Um' is not something the court can write down."). Either way, then ask once more, plainly, for when and where they'll use it. Leave "acknowledge" empty.
 Otherwise: write "acknowledge": one short sentence reacting to the answer, without repeating it back. Leave "objection" empty. If "second" is true, this was their second answer: vary the acknowledgment and don't praise.
 Always write "followup": one short question that pins down a number or a moment in their answer (how often, when first, for whom, what happens if they skip it). It's only shown when there was no objection.`,
     schema: {
@@ -141,7 +141,7 @@ Write "acknowledge": one short sentence, then say the court will now deliberate.
     task: `Stage: mvp_verdict. Write "reason": one line explaining the ruling, drawn from what the defendant said. When the case held up, quote a few words of their "how" (the plan for using it), not their reason for wanting it.
 If "verdict_by" is "rule", the ruling is already in "verdict" (approve, sleep or denied); never contradict it.
 If "verdict_by" is "model", pick "verdict" yourself: "approve" when they gave a concrete plan for using it, "denied" when it was clearly an impulse, "sleep" otherwise. When unsure, pick "sleep".
-Write "signup": one sentence inviting them to sign up, starting "Sign up, and", tied to this case (for a gift: keeping track of their gifts; for sleep: a reminder about the item).`,
+Write "signup": one or two sentences inviting them to set a savings goal for next time, so the court can hold them accountable. Personalize it from this trial: name the item and its price, or refer to their plan without repeating the quote already in "reason" (for a gift: gifts add up; for sleep: weigh the item against the goal; for denied: the money is still theirs). Don't say "sign up" or ask for an email. A "Set my goal" button appears under it.`,
     schema: { verdict: ["approve", "sleep", "denied"], reason: "string", signup: "string" },
   },
 };

@@ -130,3 +130,10 @@ Debugging: open DevTools on the Amazon tab and filter the console by `[MM]`. It 
 - **Amazon only.** Selectors were checked on live amazon.com in Nov 2026 and will drift.
 - **Wishlist and reminders.** Saved items go to a list inside the extension. There are no reminders yet.
 - **No price comparison.** The Figma deliberating screen shows "Comparing prices", which would need a price API.
+
+### Guest mode and the goal invitation (Nov 19)
+
+- **Guest by default** (switch: Settings → MVP test switches → Guest history, `hold` or `keep`). An MVP trial's records wait in memory and are written to history and the wishlist only if the defendant sets a savings goal at the end. Leave without one and the court forgets the case. "What the court keeps" says so.
+- **The invitation** at the verdict is no longer an email form. The judge invites a savings goal, written from the trial ("That's $210 still yours. Set a savings goal, and the court will keep count."), and "Set my goal" opens the team's goal sheet (Figma 16.1, `showGoalSheet`). Saving the goal keeps the case and returns to the verdict: "Goal set: Spring break, $600. The court will keep count."
+- **Courtroom:** the opener is "We are here in the matter of Mr. Moneybags v. the candle, $34." (how real judges open a hearing). No "Court is in session" or "The court enters Exhibit A" lines; Exhibit A is on the wall from the start. No figure at the defendant's table. Chat avatars are the judge's face. Stage directions are set like a script: left-aligned, italic serif, in brackets.
+- **Non-answers** ("Um", "idk") get "\"Um\" is not something the court can write down." instead of "Not why, I asked how."

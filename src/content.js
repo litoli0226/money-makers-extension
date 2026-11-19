@@ -178,13 +178,39 @@
     (Number(settings.savedSoFar) || 0) +
     history.filter((h) => h.outcome === "saved" || h.outcome === "kept").reduce((t, h) => t + (h.total || 0), 0);
 
+  // Guest mode (switch "guestHistory", default "hold"): an MVP trial's records
+  // wait here and are written to history only if the defendant sets a savings
+  // goal. Leave the page without one, and the court forgets the case.
+  const guest = { on: false, pending: [], wish: [] };
+  function startGuest(settings) {
+    guest.on = settings.guestHistory !== "keep" && !(settings.goalName && Number(settings.goalAmount) > 0);
+    guest.pending = [];
+    guest.wish = [];
+  }
+  async function flushGuest() {
+    if (!guest.on) return;
+    guest.on = false;
+    const { history, wishlist } = await getStore();
+    await chrome.storage.local.set({ history: [...guest.pending, ...history].slice(0, 200), wishlist: [...guest.wish, ...wishlist].slice(0, 100) });
+    guest.pending = [];
+    guest.wish = [];
+  }
+
   async function logOutcome(item, outcome, extra = {}) {
+    if (guest.on && extra.format === "mvp") {
+      guest.pending.unshift({ date: Date.now(), title: item.label, total: item.total, outcome, ...extra });
+      return;
+    }
     const { history } = await getStore();
     history.unshift({ date: Date.now(), title: item.label, total: item.total, outcome, ...extra });
     await chrome.storage.local.set({ history: history.slice(0, 200) });
   }
 
   async function addToWishlist(item) {
+    if (guest.on) {
+      guest.wish.unshift({ date: Date.now(), title: item.label, total: item.total, url: location.href });
+      return;
+    }
     const { wishlist } = await getStore();
     wishlist.unshift({ date: Date.now(), title: item.label, total: item.total, url: location.href });
     await chrome.storage.local.set({ wishlist: wishlist.slice(0, 100) });
@@ -411,6 +437,11 @@
     return null;
   }
 
+  // The judge's head, cropped from the cast figure, for chat avatars.
+  let judgeFace = null;
+  const faceOf = (fig) => fig.replace('viewBox="0 0 64 64"', 'viewBox="13 5 38 38"');
+  const judgeAv = () => (judgeFace ? `<span class="av face">${judgeFace}</span>` : `<span class="av judge">${ICON.scale}</span>`);
+
   // Gas: a pump, then one tank gauge per tank (at most 8), the last one filled
   // to its fraction. Below half a tank, one gauge filled to that share.
   function gasIcons(gas) {
@@ -430,6 +461,7 @@
     const short = globalThis.gicShortName(item.label);
     const the = item.items.length > 1 ? "this cart" : `the ${short}`;
     const price = money(item.total, item.currency);
+    startGuest(settings);
     const G = globalThis.gicPrices;
     const gas = item.currency && item.currency !== "USD" ? null : G.gasEquivalent(item.total);
     showCenteredPanel(`
@@ -445,7 +477,7 @@
         <button class="btn outline" data-act="skip">${esc(N.skip)}</button>
       </div>
       <div class="notice-foot">
-        <details class="keeps"><summary>${esc(N.keepsLabel)}</summary><ul>${[N.advice, ...N.keeps(aiProvider(settings)), N.gasNote(G.GAS)]
+        <details class="keeps"><summary>${esc(N.keepsLabel)}</summary><ul>${[N.advice, ...N.keeps(aiProvider(settings), guest.on), N.gasNote(G.GAS)]
           .map((t) => `<li>${esc(t)}</li>`)
           .join("")}</ul></details>
         <button class="link" data-act="never">${esc(N.never)}</button>
@@ -486,7 +518,7 @@
           ? ""
           : `<button class="card row-link" data-act="goal">${ICON.flag}<span><b>Give your savings a goal</b><small>A trip, a laptop, a safety net. Every dollar you skip counts toward it.</small></span>${ICON.arrow}</button>`
       }
-      <div class="card wish"><span class="thumb"></span><span>${esc(short)} is on your Guilty If Charged wishlist.${by ? ` Revisit it after ${esc(by)}.` : ""}</span></div>
+      ${guest.on ? "" : `<div class="card wish"><span class="thumb"></span><span>${esc(short)} is on your Guilty If Charged wishlist.${by ? ` Revisit it after ${esc(by)}.` : ""}</span></div>`}
       <button class="btn primary" data-act="done">Done</button>`;
     if (style === "panel") showPanel(html);
     else showPage(`<div class="card-lg">${html}</div>`, "centered");
@@ -496,7 +528,7 @@
 
   // ---------- 16.1 Goal sheet ----------
 
-  function showGoalSheet(item, saved, style) {
+  function showGoalSheet(item, saved, style, onDone = null) {
     const kinds = [
       ["Trip", ICON.plane],
       ["Safety net", ICON.shield],
@@ -531,12 +563,14 @@
         name.focus();
       };
     }
-    on("[data-act=later]", clearUI);
+    on("[data-act=later]", () => (onDone ? onDone(null) : clearUI()));
     on("[data-act=savegoal]", async () => {
       if (!name.value.trim() || !(Number(amount.value) > 0)) return amount.focus();
       const { settings } = await getStore();
-      await chrome.storage.local.set({ settings: { ...settings, goalName: name.value.trim(), goalAmount: String(Number(amount.value)) } });
-      clearUI();
+      const goal = { name: name.value.trim(), amount: Number(amount.value) };
+      await chrome.storage.local.set({ settings: { ...settings, goalName: goal.name, goalAmount: String(goal.amount) } });
+      await flushGuest(); // a goal turns a guest's case into a kept case
+      onDone ? onDone(goal) : clearUI();
     });
   }
 
@@ -841,6 +875,8 @@
     const cast = castFromNotice || globalThis.gicCast.castCourt(); // same judge as on the court notice
     log("Cast:", cast.ids);
     state.cast = cast.ids;
+    if (!castFromNotice) startGuest(settings); // the notice already did when shown
+    judgeFace = faceOf(cast.judge);
     let warned = false;
     let howStep = false; // the live hint only runs on "how" questions
 
@@ -855,7 +891,7 @@
       <div class="court-stage">
         <div class="scene" id="scene" aria-hidden="true">
           <div class="seal-wall">${ICON.scale}</div>
-          <div class="exhibit" id="exhibit">
+          <div class="exhibit in" id="exhibit">
             <span class="ex-img">${exhibitImg ? `<img src="${esc(exhibitImg)}" alt="" />` : ICON.box}</span>
             <span class="ex-text"><small>Exhibit A</small><b>${esc(exhibit ? short : `${item.items.length} items`)}</b><span>${esc(money(item.total, item.currency))}</span></span>
           </div>
@@ -868,12 +904,11 @@
             <div class="bench"><span class="plate">The judge</span></div>
           </div>
           <div class="spot defendant" data-who="defendant">
-            <div class="figure">${FIGURE.defendant}<span class="speech"><i></i><i></i><i></i></span></div>
             <div class="table"><span class="plate">You</span></div>
           </div>
         </div>
         <div class="chat" role="log" aria-label="Courtroom">
-          <div class="chat-head"><span class="av judge">${ICON.scale}</span><span><b>The judge</b><small>Hearing your case for ${item.items.length > 1 ? "this cart" : `the ${esc(short)}`}</small></span></div>
+          <div class="chat-head">${judgeAv()}<span><b>The judge</b><small>Hearing your case for ${item.items.length > 1 ? "this cart" : `the ${esc(short)}`}</small></span></div>
           <div class="log" id="log" aria-live="polite"></div>
           <div id="controls"></div>
         </div>
@@ -946,7 +981,7 @@
         }</div>`;
       } else {
         row.className = "msg judge";
-        row.innerHTML = `<span class="av judge">${ICON.scale}</span><div class="bubble${opts.question ? " q" : ""}">${esc(text)}</div>`;
+        row.innerHTML = `${judgeAv()}<div class="bubble${opts.question ? " q" : ""}">${esc(text)}</div>`;
       }
       logEl.appendChild(row);
       scroll();
@@ -963,7 +998,7 @@
       setSpeaker(who, true);
       const row = document.createElement("div");
       row.className = `msg ${who} typing`;
-      row.innerHTML = `<span class="av ${who === "witness" ? "gold" : "judge"}">${who === "witness" ? ICON.witness : ICON.scale}</span><div class="bubble"><i></i><i></i><i></i></div>`;
+      row.innerHTML = `${who === "witness" ? `<span class="av gold">${ICON.witness}</span>` : judgeAv()}<div class="bubble"><i></i><i></i><i></i></div>`;
       logEl.appendChild(row);
       scroll();
       return () => row.remove();
@@ -1054,11 +1089,7 @@
       });
     }
 
-    moment(`Court is in session. ${state.title} Moneybags, defendant.`);
-    await wait(500);
-    moment("The court enters Exhibit A.");
-    $("#exhibit").classList.add("in");
-    await wait(700);
+    await wait(400);
 
     // ----- 2. Item, price line, "how" -----
     const r0 = await ask("mvp_item");
@@ -1088,7 +1119,7 @@
       stepDone("how");
       stepAdd("objection");
       judgeSpot.classList.add("eyebrow"); // set_expression: eyebrow_raised
-      moment("The judge raises an eyebrow.");
+      moment(r1.kind === "unclear" ? "The judge waits. The pen does not move." : "The judge sets down the pen. One eyebrow rises.");
       await wait(500);
       say("judge", r1.objection, { question: true });
       r1 = await howAnswer(false);
@@ -1131,7 +1162,7 @@
     say("judge", L.callWitness);
     await readPause(L.callWitness);
     const callName = { wallet: "your wallet", item: "the item itself", future: "Future you" }[state.witness.id] || `the ${state.witness.name.toLowerCase()}`;
-    moment(`The court calls ${callName} to the stand.`);
+    moment(`The doors open. The court calls ${callName} to the stand.`);
     const stand = scene.querySelector(".spot.witness");
     stand.classList.add("called");
     stand.querySelector(".plate").textContent = state.witness.name;
@@ -1212,32 +1243,26 @@
         <p class="kicker center">The court rules…</p>
         <h2 class="h1 center">${esc(V.title)}</h2>
         <div class="reason r-${V.box}">${esc(reason)}</div>
-        <div class="card signup" id="signup">
-          <p class="signup-line"><span class="av judge">${ICON.scale}</span><span>${esc(signupLine)}</span></p>
-          <form id="signupForm" class="signup-row">
-            <input id="email" type="email" placeholder="you@email.com" autocomplete="email" />
-            <button class="btn outline small">Sign up</button>
-          </form>
-          <p class="tiny">Optional. The court works the same without it. Your email stays in this browser for now.</p>
-        </div>
+        ${meta.goal ? `<div class="card signup"><p class="signup-line">${judgeAv()}<span>${esc(`Goal set: ${meta.goal.name}, ${money(meta.goal.amount)}. The court will keep count.`)}</span></p></div>`
+          : meta.goalSkipped ? "" : `<div class="card signup" id="signup">
+          <p class="signup-line">${judgeAv()}<span>${esc(signupLine)}</span></p>
+          <button class="btn outline" data-act="goal">Set my goal</button>
+          <p class="tiny">Optional.${guest.on ? " Skip it, and the court forgets this case when you leave." : ""}</p>
+        </div>`}
         <button class="btn primary" data-act="primary">${esc(V.primary)}</button>
         <button class="link" data-act="secondary">${esc(V.secondary)}</button>
       </div>`, "centered");
-    const record = { where: "courtroom", verdict, transcript, ...meta };
-    const email = $("#email");
-    email.addEventListener("keydown", (e) => e.stopPropagation());
-    // Sign-up (show_signup). There's no account system yet: the email stays in this browser.
-    $("#signupForm").onsubmit = async (e) => {
-      e.preventDefault();
-      if (!/^\S+@\S+\.\S+$/.test(email.value.trim())) return email.focus();
-      const { signups = [] } = await chrome.storage.local.get({ signups: [] });
-      signups.unshift({ date: Date.now(), email: email.value.trim(), line: signupLine, verdict, title: meta.title });
-      await chrome.storage.local.set({ signups: signups.slice(0, 50) });
-      $("#signup").innerHTML = `<p class="signup-line"><span class="av judge">${ICON.check}</span><span>You're signed up. The court will be in touch.</span></p>`;
-      record.signedUp = true;
-    };
+    const { goal: _g, goalSkipped: _s, ...kept } = meta;
+    const record = { where: "courtroom", verdict, transcript, ...kept, goalSet: !!meta.goal };
+    // The investment step: a goal for next time (the team's goal sheet, Figma 16.1).
+    on("[data-act=goal]", async () => {
+      const { history: h } = await getStore();
+      showGoalSheet(item, profileFrom(settings, h).saved, "page", (goal) =>
+        showMvpVerdict(item, settings, history, verdict, reason, signupLine, transcript, goal ? { ...meta, goal } : { ...meta, goalSkipped: true })
+      );
+    });
 
-    const goSave = () => saveIt(item, settings, history, "courtroom", "page", transcript, { verdict, ...meta, signedUp: record.signedUp });
+    const goSave = () => saveIt(item, settings, history, "courtroom", "page", transcript, { verdict, ...kept, goalSet: !!meta.goal });
     on("[data-act=primary]", async () => {
       if (verdict === "approve") {
         await logOutcome(item, "approved", record);
@@ -1616,6 +1641,8 @@ label input:focus { border-color: var(--blue); }
 .av svg { width: 17px; height: 17px; }
 .av.judge { background: var(--blue-tint); color: var(--blue); }
 .av.gold { background: var(--gold-tint); color: var(--gold-deep); }
+.av.face { background: var(--blue-tint); overflow: hidden; }
+.av.face svg { width: 100%; height: 100%; display: block; }
 .log { flex: 1; overflow-y: auto; padding: 20px 16px 12px; display: flex; flex-direction: column; gap: 10px; }
 .log > :first-child { margin-top: auto; }
 .msg { display: flex; gap: 10px; align-items: flex-end; max-width: 78%; animation: rise .2s ease-out; }
@@ -1627,7 +1654,10 @@ label input:focus { border-color: var(--blue); }
 .msg.witness .who { font-size: 12px; font-weight: 700; color: var(--gold-deep); margin: 0 0 3px 2px; }
 .msg.witness .who span { font-weight: 500; }
 .msg.witness .bubble { background: var(--gold-tint); border-bottom-left-radius: 4px; }
-.moment { align-self: center; text-align: center; max-width: 80%; font-size: 12px; font-weight: 600; color: var(--seal); padding: 6px 4px; animation: fade .3s ease-out; }
+/* Stage directions, set like a script: left-aligned, italic, in brackets. */
+.moment { align-self: flex-start; text-align: left; max-width: 86%; margin: 4px 0 4px 40px; padding: 2px 0 2px 12px; border-left: 2px solid var(--gold); font-family: Georgia, "Times New Roman", serif; font-style: italic; font-size: 15px; font-weight: 400; color: var(--ink); animation: fade .5s ease-out; }
+.moment::before { content: "["; color: var(--gold-deep); }
+.moment::after { content: "]"; color: var(--gold-deep); }
 .typing .bubble { display: flex; gap: 4px; padding: 13px 14px; }
 .typing .bubble i { width: 6px; height: 6px; border-radius: 50%; background: var(--slate); animation: blink 1s infinite; }
 .typing .bubble i:nth-child(2) { animation-delay: .15s; }
