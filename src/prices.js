@@ -13,7 +13,7 @@
     { usd: 6, thing: "a coffee from a café", plural: "café coffees" },
     { usd: 15, thing: "a movie ticket", plural: "movie tickets" },
     { usd: 20, thing: "a large pizza", plural: "large pizzas" },
-    { usd: 45, thing: "a tank of gas", plural: "tanks of gas" },
+    { usd: 52, thing: "a tank of gas", plural: "tanks of gas" },
     { usd: 70, thing: "a new video game", plural: "new video games" },
     { usd: 120, thing: "a dinner out for two", plural: "dinners out for two" },
     { usd: 420, thing: "a round-trip flight to Los Angeles", plural: "round-trip flights to Los Angeles" },
@@ -52,5 +52,30 @@
     return `${priceText}. They say that's about ${m.n} ${m.row.plural} today.`;
   }
 
-  globalThis.gicPrices = { PRICE_TABLE, ANECDOTES, comparePrice, priceLine };
+  // The court notice's anchor: gas, a cost most American adults pay for, until
+  // the extension knows more about the person. Update perGallon now and then.
+  // AAA national average for regular, Nov 18, 2026: $3.7502 (gasprices.aaa.com).
+  // Tank: most US passenger cars hold 12 to 16 gallons (Edmunds); 14 is the middle.
+  const GAS = { perGallon: 3.75, gallonsPerTank: 14, asOf: "Nov 18, 2026", source: "AAA national average" };
+  const FRACTION = { 0: "", 0.25: "¼", 0.5: "½", 0.75: "¾" };
+
+  // Price -> tanks of gas, to the nearest quarter tank. Below half a tank,
+  // whole gallons instead ("3 gallons of gas"), since "¼ tank" reads as nothing.
+  function gasEquivalent(price) {
+    if (price == null || !(price > 0)) return null;
+    const tank = GAS.perGallon * GAS.gallonsPerTank;
+    const raw = price / tank;
+    if (raw < 0.5) {
+      const g = Math.max(1, Math.round(price / GAS.perGallon));
+      return { unit: "gallon", n: g, text: g === 1 ? "a gallon of gas" : `${g} gallons of gas`, raw, tank };
+    }
+    const q = raw >= 10 ? Math.round(raw) : Math.round(raw * 4) / 4; // past 10, whole tanks
+    const whole = Math.floor(q);
+    const frac = FRACTION[q - whole] || "";
+    const num = whole === 0 ? frac : `${whole}${frac}`;
+    const text = q === 1 ? "a tank of gas" : whole === 0 ? `${frac} of a tank of gas` : `${num} tanks of gas`;
+    return { unit: "tank", n: q, num, text, raw, tank };
+  }
+
+  globalThis.gicPrices = { PRICE_TABLE, ANECDOTES, comparePrice, priceLine, GAS, gasEquivalent };
 })();

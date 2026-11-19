@@ -411,26 +411,50 @@
     return null;
   }
 
+  // Gas: a pump, then one tank gauge per tank (at most 8), the last one filled
+  // to its fraction. Below half a tank, one gauge filled to that share.
+  function gasIcons(gas) {
+    const fills = [];
+    if (gas.unit === "gallon") fills.push(Math.min(gas.raw, 1));
+    else {
+      let left = gas.n;
+      while (left > 0 && fills.length < 8) { fills.push(Math.min(left, 1)); left -= 1; }
+    }
+    const more = gas.unit === "tank" && gas.n > 8 ? `<span class="gas-more">+${Math.ceil(gas.n - 8)}</span>` : "";
+    return `<span class="pump">${ICON.pump}</span>` + fills.map((f) => `<span class="tank"><span style="width:${Math.max(Math.round(f * 100), 6)}%"></span></span>`).join("") + more;
+  }
+
   function showCourtNotice(item, settings, history) {
     const N = globalThis.gicMvpLines.notice;
     const cast = globalThis.gicCast.castCourt();
     const short = globalThis.gicShortName(item.label);
     const the = item.items.length > 1 ? "this cart" : `the ${short}`;
     const price = money(item.total, item.currency);
+    const G = globalThis.gicPrices;
+    const gas = item.currency && item.currency !== "USD" ? null : G.gasEquivalent(item.total);
     showCenteredPanel(`
       <div class="panel-head"><span class="notice-head">${ICON.scale}${esc(N.head)}</span><button class="icon-btn" data-act="close" aria-label="Close">${ICON.x}</button></div>
       <div class="card case-card">
-        <div class="case-judge">${cast.judge}</div>
-        <div class="case-text">
-          <span class="tiny">The case before the court</span>
-          <b>${esc(item.items.length > 1 ? "This cart" : short)}</b>
+        <div class="case-row">
+          <div class="case-text">
+            <span class="tiny">The case before the court</span>
+            <b>${esc(item.items.length > 1 ? "This cart" : short)}</b>
+          </div>
           <span class="case-price">${esc(price)}</span>
         </div>
+        ${gas ? `<div class="gas" aria-label="${esc(`${price} is about ${gas.text}`)}">
+          <span class="gas-row" aria-hidden="true">${gasIcons(gas)}</span>
+          <span class="gas-eq">= ${esc(gas.text)}</span>
+        </div>
+        <span class="gas-note">${esc(N.gasNote(G.GAS))}</span>` : ""}
       </div>
-      <h2 class="h2">${esc(N.title)}</h2>
-      <p class="muted">${esc(N.body({ the }))}</p>
+      <div class="notice-ask">
+        <div class="case-judge">${cast.judge}</div>
+        <div><h2 class="h2">${esc(N.title(gas))}</h2><p class="muted">${esc(N.body())}</p></div>
+      </div>
+      <div class="hint">${ICON.check}<span>${esc(N.advice)}</span></div>
       <div class="stack">
-        <button class="btn primary" data-act="court">${esc(N.start)}</button>
+        <button class="btn primary court-go" data-act="court"><span>${esc(N.start)}</span><span class="time">${ICON.clock}${esc(N.time)}</span></button>
         <button class="btn outline" data-act="skip">${esc(N.skip)}</button>
       </div>
       <details class="keeps"><summary>${esc(N.keepsLabel)}</summary><ul>${N.keeps(aiProvider(settings))
@@ -1376,6 +1400,8 @@
     scale: svg('<path d="M12 4v16M8 20h8M5 7h14M12 4l-1 3h2z"/><path d="M5 7l-3 6a3 3 0 0 0 6 0L5 7zM19 7l-3 6a3 3 0 0 0 6 0l-3-6z"/>'),
     check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="2.4"'),
     chevron: svg('<path d="M7 10l5 5 5-5"/>', 'stroke-width="2"'),
+    pump: svg('<path d="M5 20V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v15M3 20h14M5 10h10M15 8l3 2v7a1.5 1.5 0 0 0 3 0V9l-3-3"/>'),
+    clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
     box: svg('<path d="M4 8l8-4 8 4v8l-8 4-8-4z"/><path d="M4 8l8 4 8-4M12 12v8"/>'),
     clock: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>'),
     dollar: svg('<path d="M12 3v18M16.5 7.5c-.8-1.3-2.4-2-4.5-2-2.6 0-4.3 1.3-4.3 3.2 0 4.6 9 2.4 9 7 0 2-1.9 3.3-4.6 3.3-2.3 0-4-.8-4.8-2.3"/>', 'stroke-width="2.2"'),
@@ -1609,8 +1635,25 @@ label input:focus { border-color: var(--blue); }
 .scrim { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(148, 154, 165, .55); animation: fade .2s ease-out; }
 .notice-head { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }
 .notice-head svg { width: 16px; height: 16px; }
-.case-card { display: flex; align-items: center; gap: 14px; padding: 12px 14px; }
+.case-card { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; }
+.case-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.gas { display: flex; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.gas-row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.pump { color: var(--blue); display: grid; place-items: center; margin-right: 2px; }
+.pump svg { width: 20px; height: 20px; display: block; }
+.tank { width: 26px; height: 14px; border-radius: 4px; border: 1.5px solid var(--blue); padding: 1.5px; display: flex; }
+.tank > span { display: block; height: 100%; border-radius: 2px; background: var(--blue); }
+.gas-more { font-size: 13px; font-weight: 700; color: var(--blue); }
+.gas-eq { font-size: 15px; font-weight: 700; color: var(--blue); }
+.gas-note { font-size: 11px; color: var(--seal); }
+.notice-ask { display: flex; gap: 12px; align-items: flex-start; }
+.notice-ask .h2 { margin: 0 0 4px; }
+.notice-ask .muted { margin: 0; }
+.case-judge { flex: none; }
 .case-judge svg { width: 52px; height: 52px; display: block; }
+.court-go { display: flex; align-items: center; justify-content: center; gap: 10px; position: relative; }
+.court-go .time { position: absolute; right: 14px; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px; background: rgba(255,255,255,.14); }
+.court-go .time svg { width: 13px; height: 13px; }
 .case-judge .brow { stroke-width: 1.8; stroke-linecap: round; }
 .case-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .case-text b { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
