@@ -1200,14 +1200,28 @@
         controls.innerHTML = `
           <p class="live-hint" id="hint" hidden>${esc(L.howPlaceholder)}</p>
           <form class="composer" id="composer">
-            <input id="answer" autocomplete="off" placeholder="${esc(placeholder || "Make your case")}" />
+            <textarea id="answer" rows="1" autocomplete="off" placeholder="${esc(placeholder || "Make your case")}"></textarea>
             <button class="send" aria-label="Send">${ICON.send}</button>
           </form>`;
         const input = $("#answer");
         const hint = $("#hint");
         scroll(); // the controls take room from the log; keep the last line in view
         input.focus();
-        input.addEventListener("keydown", (e) => e.stopPropagation());
+        // The box grows with the answer (up to about 6 lines, then it scrolls).
+        // Enter sends; Shift+Enter starts a new line.
+        const grow = () => {
+          input.style.height = "auto";
+          input.style.height = `${Math.min(input.scrollHeight + 3, 160)}px`;
+          scroll();
+        };
+        input.addEventListener("input", grow);
+        input.addEventListener("keydown", (e) => {
+          e.stopPropagation();
+          if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+            e.preventDefault();
+            $("#composer").requestSubmit();
+          }
+        });
         let t;
         input.addEventListener("input", () => {
           if (input.value) setSpeaker("defendant", true);
@@ -1479,9 +1493,9 @@
 
   // Verdict titles. Writers (Oli): R15 wording is still open; change it here.
   const MVP_VERDICTS = {
-    approve: { title: "Case approved", seal: "green", icon: "check", box: "green", primary: "Continue to checkout", secondary: "Actually, save it instead" },
-    sleep: { title: "Sleep on it", seal: "blue", icon: "clock", box: "blue", primary: "Save it for now", secondary: "Buy it anyway" },
-    denied: { title: "Case denied", seal: "plain", icon: "scale", box: "plain", primary: "Keep my money", secondary: "Appeal and buy anyway" },
+    approve: { title: "Case approved", seal: "green", icon: "check", box: "green", primary: "Continue to checkout", secondary: "Don't buy it after all" },
+    sleep: { title: "Sleep on it", seal: "blue", icon: "clock", box: "blue", primary: "Don't buy it today", secondary: "Buy it anyway", after: "You stay on this page. Nothing is bought." },
+    denied: { title: "Case denied", seal: "plain", icon: "scale", box: "plain", primary: "Don't buy it", secondary: "Appeal and buy anyway", after: "You stay on this page. Nothing is bought." },
   };
 
   async function showMvpVerdict(item, settings, history, verdict, reason, signupLine, transcript, meta) {
@@ -1508,6 +1522,7 @@
           <p class="tiny">Optional.${guest.on ? " Skip it, and the court forgets this case when you leave." : ""}</p>
         </div>`}
         <button class="btn primary" data-act="primary">${esc(primary)}</button>
+        ${V.after ? `<p class="tiny center verdict-after">${esc(V.after)}</p>` : ""}
         <button class="link" data-act="secondary">${esc(V.secondary)}</button>
       </div>`, "centered");
     const { goal: _g, goalSkipped: _s, ...kept } = meta;
@@ -2074,7 +2089,11 @@ label input:focus { border-color: var(--blue); }
 .spot.judge.eyebrow .figure svg { opacity: 1; }
 .composer { display: flex; gap: 10px; padding: 12px 14px 14px; border-top: 1px solid var(--line); }
 .composer input { flex: 1; border: 1.5px solid var(--paper); border-radius: 12px; padding: 11px 14px; font-size: 15px; outline: none; background: var(--white); }
-.composer input:focus { border-color: var(--blue); }
+.composer input:focus, .composer textarea:focus { border-color: var(--blue); }
+.composer textarea { flex: 1; border: 1.5px solid var(--paper); border-radius: 12px; padding: 11px 14px; font: inherit; font-size: 15px; line-height: 1.4; outline: none; background: var(--white); resize: none; overflow-y: auto; min-height: 46px; max-height: 160px; box-sizing: border-box; }
+.composer:has(textarea) { align-items: flex-end; }
+.verdict-after { margin: -4px 0 2px; text-align: center; }
+.composer:has(textarea) .send { height: 46px; flex: none; }
 .composer input:disabled { background: var(--bill); }
 .send { width: 44px; border: 0; border-radius: 12px; background: var(--ink); color: var(--white); display: grid; place-items: center; }
 .send:disabled { opacity: .35; cursor: default; }
