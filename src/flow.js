@@ -117,22 +117,23 @@
 
   // Same three expert roles as the classic court, plus a researcher who may only
   // quote the team's findings list (R13). Gift and want/treat arguments get the researcher.
+  // MVP: one expert witness, who speaks from one of three angles. The angle is
+  // drawn at random from the ones that fit the case, never the same as last
+  // trial's, with a random stance (for or against) so it can't be predicted.
+  const EXPERT = "Expert witness";
   const MVP_WITNESSES = {
     ...WITNESSES,
-    research: { id: "research", name: "Research witness", role: "Expert witness · quotes published studies" },
+    research: { id: "research", name: EXPERT, role: "quotes published studies" },
+    usage: { id: "usage", name: EXPERT, role: "runs the numbers" },
+    price: { id: "price", name: EXPERT, role: "checks the price" },
     item: { id: "item", name: "The item itself", role: "Witness · will live in your house" },
     wallet: { id: "wallet", name: "Your wallet", role: "Witness · has seen money leave before" },
   };
-  // Unpredictable on purpose: a weighted draw from the witnesses that fit the
-  // case, never the same one twice in a row, with a random stance (for or
-  // against the purchase) so the testimony can't be guessed from the answers.
   function mvpPickWitness(state, lastId = null, rand = Math.random) {
     const claims = state.answers.map((a) => a.claim);
     const has = (...cs) => claims.some((c) => cs.includes(c));
-    const pool = [["future", 2], ["item", 2], ["wallet", 2]];
-    if (has("gift", "want", "treat", "vague")) pool.push(["research", 3]);
-    if (has("need", "usage", "learn")) pool.push(["usage", 3], ["research", 1]);
-    if (has("price")) pool.push(["price", 3]);
+    const pool = [["research", 2], ["price", 1]];
+    if (has("need", "usage", "learn") || state.answers.some((a) => a.kind === "mechanism")) pool.push(["usage", 2]);
     const options = pool.filter(([id]) => id !== lastId);
     const total = options.reduce((t, [, w]) => t + w, 0);
     let r = rand() * total;

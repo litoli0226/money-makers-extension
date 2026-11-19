@@ -144,3 +144,11 @@ Debugging: open DevTools on the Amazon tab and filter the console by `[MM]`. It 
 Every trial opens with a joke about the judge's absurdly rich past, picked at random from `ANECDOTES` in `src/prices.js` ("Mr. Moneybags, you have brought before the court a $48 purchase. I bought my first yacht with that same amount. What are you spending it on?"). Then [The judge leans in to read Exhibit A.] (eyebrow up, the exhibit card glows) and a jab from `JABS` built on the price table ("A $48 candle. I guess you don't like movie tickets, Mr. Moneybags, as that's 3 movie tickets."). The code picks the joke, so variety doesn't depend on temperature; in AI mode the joke goes to the model in the case file and the model may reword it. Writers: add to `ANECDOTES` and `JABS` freely.
 
 The Exhibit A photo shows a grey box that pulses (three times, under 5 s, none with reduced motion) while it loads, and stays a plain grey box if the photo never arrives. Amazon's lazy-load spinners and pixel placeholders are skipped.
+
+### Courtroom, witness and savings (Nov 19, later)
+
+- **Scene:** taller (230 px) with figures about twice their old size next to the furniture, so expressions read. The "You" seat holds a blank grey placeholder with no face, until the defendant makes a character. Amazon's page underneath no longer scrolls while the court is open.
+- **One expert witness.** The witness is always "Expert witness", speaking from one of three angles drawn at random (quotes published studies, runs the numbers, checks the price), never the same angle twice in a row, with a random stance for or against. "Future you", "The item itself" and "Your wallet" are out of the MVP draw (their lines stay in `script.js`).
+- **Goal sheet:** "What are you saving for?", "Name", "Amount in dollars" with a "$" prefix; letters are dropped as they're typed ("Numbers only, like 600.").
+- **Verdict with a goal** (set just now or before): the goal bar replaces the invitation, with "Saving $34 gets you to 6%.", and the main button becomes "Save $34" for sleep and denied (the Figma "court rules" frame).
+- **Saved screen** reads the goal and savings fresh, so it shows "Saved for Spring break so far $34 of $600" after a goal is set, with no "Give your savings a goal" card. Without a goal, milestones are counted from the new total.

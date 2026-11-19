@@ -97,6 +97,10 @@
 
   // The defendant ("you") stays the same blue hoodie every time.
   const defendant = () => person("#224786", "", HAIR.short("#62666F"));
+  // Until the defendant makes a character: a blank grey placeholder with no
+  // face, like a default profile picture. Unsatisfying on purpose.
+  const blank = () =>
+    `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M10 64c0-14 9.5-22 22-22s22 8 22 22z" fill="#C6CCD3"/><circle cx="32" cy="25" r="12" fill="#DADADC"/></svg>`;
 
-  globalThis.gicCast = { SKIN, HAIR_COLOR, HAIR, JUDGES, WITNESSES, person, judge, witness, defendant, castCourt };
+  globalThis.gicCast = { SKIN, HAIR_COLOR, HAIR, JUDGES, WITNESSES, person, judge, witness, defendant, blank, castCourt };
 })();

@@ -260,9 +260,24 @@
     if (el) el.onclick = fn;
   };
 
+  // While the court is on screen, Amazon's page underneath doesn't scroll.
+  let savedOverflow = null;
+  function lockPage(on) {
+    const el = document.documentElement;
+    if (on && savedOverflow === null) {
+      savedOverflow = [el.style.overflow, document.body?.style.overflow || ""];
+      el.style.overflow = "hidden";
+      if (document.body) document.body.style.overflow = "hidden";
+    } else if (!on && savedOverflow !== null) {
+      el.style.overflow = savedOverflow[0];
+      if (document.body) document.body.style.overflow = savedOverflow[1];
+      savedOverflow = null;
+    }
+  }
   function clearUI() {
     layer.innerHTML = "";
     host.style.inset = "auto";
+    lockPage(false);
   }
   // Quick check sits top-right over the page. Everything else takes over the page.
   function showPanel(html) {
@@ -272,10 +287,12 @@
   // Centered over a Slate scrim (design system: "Backdrop behind takeover"). Used by the court notice.
   function showCenteredPanel(html, cls = "") {
     host.style.inset = "0";
+    lockPage(true);
     layer.innerHTML = `<div class="scrim"><div class="panel ${cls}" role="dialog" aria-modal="true">${html}</div></div>`;
   }
   function showPage(html, cls = "") {
     host.style.inset = "0";
+    lockPage(true);
     layer.innerHTML = `<div class="page ${cls}">${html}</div>`;
   }
 
@@ -331,18 +348,21 @@
       if (pct(before) < 100 && pct(after) >= 100) milestone = `that's your ${g.name} goal reached.`;
       return { hasGoal: true, target: g.target, before, after, pctBefore: pct(before), pctAfter: pct(after), left: Math.max(g.target - after, 0), milestone };
     }
+    // No goal: milestones every $100. "Before" counts toward the next one
+    // above what's saved now; "after" toward the next one above the new total.
     const step = 100;
-    const next = (Math.floor(before / step) + 1) * step;
-    const pct = (v) => Math.min(100, Math.round((v / next) * 100));
+    const nextOf = (v) => (Math.floor(v / step) + 1) * step;
+    const passed = Math.floor(after / step) > Math.floor(before / step) ? Math.floor(after / step) * step : 0;
     return {
       hasGoal: false,
-      target: next,
+      target: nextOf(before),
+      targetAfter: nextOf(after),
       before,
       after,
-      pctBefore: pct(before),
-      pctAfter: pct(after),
-      left: Math.max(next - after, 0),
-      milestone: after >= next ? `you're past $${next} saved.` : "",
+      pctBefore: Math.round((before / nextOf(before)) * 100),
+      pctAfter: Math.round((after / nextOf(after)) * 100),
+      left: Math.max(nextOf(before) - after, 0),
+      milestone: passed ? `you're past $${passed} saved.` : "",
     };
   }
 
@@ -367,18 +387,22 @@
       <div class="row-between"><span class="tiny">You've saved so far</span>${
         mode === "before" ? `<button class="chip gold" data-act="setgoal">+ Set a goal</button>` : ""
       }</div>
-      <div class="amount"><b>${money(value)}</b><span>· next milestone ${money(m.target)}</span></div>
+      <div class="amount"><b>${money(value)}</b><span>· next milestone ${money(mode === "after" ? m.targetAfter : m.target)}</span></div>
       ${bar(pct)}
       <div class="bar-foot"><span>${pct}% of the way</span>${mode === "before" ? `<span class="blue">Skip it → ${m.pctAfter}%</span>` : ""}</div>
     </div>`;
   }
 
-  // Slim goal line on the verdict screens.
-  function goalLine(profile) {
+  // Slim goal line on the verdict screens. With an item, also shows what
+  // saving it would do ("Saving $48 gets you to 8%.").
+  function goalLine(profile, item = null, note = "") {
     const g = profile.goal;
     if (!g?.target) return "";
     const pct = Math.min(100, Math.round((profile.saved / g.target) * 100));
-    return `<div class="card goal-line"><div class="row-between"><span>${esc(g.name)}</span><span class="blue">${money(profile.saved)} of ${money(g.target)}</span></div>${bar(pct)}</div>`;
+    const after = item ? Math.min(100, Math.round(((profile.saved + (item.total || 0)) / g.target) * 100)) : null;
+    return `<div class="card goal-line"><div class="row-between"><span>${esc(g.name)}</span><span class="blue">${money(profile.saved)} of ${money(g.target)}</span></div>${bar(pct)}${
+      after !== null ? `<small class="goal-note">${esc(note || `Saving ${money(item.total, item.currency)} gets you to ${after}%.`)}</small>` : ""
+    }</div>`;
   }
 
   // ---------- 02 Quick check ----------
@@ -519,7 +543,9 @@
 
   // ---------- 03 / 11 Saved ----------
 
-  async function saveIt(item, settings, history, where, style, transcript = [], extra = {}) {
+  async function saveIt(item, settingsAtStart, historyAtStart, where, style, transcript = [], extra = {}) {
+    // Read again: a goal may have been set since the trial started.
+    const { settings, history } = await getStore();
     const profile = profileFrom(settings, history); // before this save
     const m = goalMath(profile, item);
     await logOutcome(item, "saved", { where, transcript, ...extra });
@@ -538,7 +564,7 @@
           ? ""
           : `<button class="card row-link" data-act="goal">${ICON.flag}<span><b>Give your savings a goal</b><small>A trip, a laptop, a safety net. Every dollar you skip counts toward it.</small></span>${ICON.arrow}</button>`
       }
-      ${guest.on ? "" : `<div class="card wish"><span class="thumb"></span><span>${esc(short)} is on your Guilty If Charged wishlist.${by ? ` Revisit it after ${esc(by)}.` : ""}</span></div>`}
+      ${guest.on ? "" : `<div class="card wish">${item.items[0]?.image && !/loading|spinner|pixel|\.gif/i.test(item.items[0].image) ? `<img class="thumb" src="${esc(item.items[0].image)}" alt="" />` : ""}<span>${esc(short)} is on your Guilty If Charged wishlist.${by ? ` Revisit it after ${esc(by)}.` : ""}</span></div>`}
       <button class="btn primary" data-act="done">Done</button>`;
     if (style === "panel") showPanel(html);
     else showPage(`<div class="card-lg">${html}</div>`, "centered");
@@ -556,11 +582,11 @@
       ["Something else", ICON.plus],
     ];
     const html = `
-      <h2 class="h2">One more thing: What are you saving for?</h2>
+      <h2 class="h2">What are you saving for?</h2>
       <div class="chips">${kinds.map(([k, i], n) => `<button class="chip${n === 0 ? " on" : ""}" data-kind="${k}">${i}${k}</button>`).join("")}</div>
       <div class="two">
-        <label>Name it<input id="gname" value="Spring break" /></label>
-        <label>Amount<input id="gamount" inputmode="decimal" placeholder="600" /></label>
+        <label>Name<input id="gname" value="Spring break" /></label>
+        <label>Amount in dollars<span class="money-in"><span aria-hidden="true">$</span><input id="gamount" inputmode="decimal" placeholder="600" aria-describedby="gamountErr" /></span><small id="gamountErr" class="field-err" role="alert"></small></label>
       </div>
       <p class="blue center small" id="gpreview"></p>
       <button class="btn primary" data-act="savegoal">Save my goal</button>
@@ -572,9 +598,22 @@
     for (const el of [name, amount]) el.addEventListener("keydown", (e) => e.stopPropagation());
     const preview = () => {
       const a = Number(amount.value);
-      $("#gpreview").textContent = a > 0 ? `${money(saved)} of ${money(a)} already done. That's ${Math.min(100, Math.round((saved / a) * 100))}%.` : "";
+      const pct = (v) => Math.min(100, Math.round((v / a) * 100));
+      $("#gpreview").textContent = !(a > 0)
+        ? ""
+        : saved > 0
+          ? `${money(saved)} of ${money(a)} already done. That's ${pct(saved)}%.`
+          : item?.total
+            ? `Skipping this ${money(item.total, item.currency)} would get you ${pct(item.total)}% of the way.`
+            : "";
     };
-    amount.addEventListener("input", preview);
+    amount.addEventListener("input", () => {
+      // Numbers only: drop anything else as it's typed, and say why.
+      const clean = amount.value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
+      $("#gamountErr").textContent = clean !== amount.value ? "Numbers only, like 600." : "";
+      if (clean !== amount.value) amount.value = clean;
+      preview();
+    });
     for (const chip of layer.querySelectorAll("[data-kind]")) {
       chip.onclick = () => {
         layer.querySelectorAll("[data-kind]").forEach((c) => c.classList.toggle("on", c === chip));
@@ -585,7 +624,11 @@
     }
     on("[data-act=later]", () => (onDone ? onDone(null) : clearUI()));
     on("[data-act=savegoal]", async () => {
-      if (!name.value.trim() || !(Number(amount.value) > 0)) return amount.focus();
+      if (!name.value.trim()) return name.focus();
+      if (!(Number(amount.value) > 0)) {
+        $("#gamountErr").textContent = "Enter an amount, like 600.";
+        return amount.focus();
+      }
       const { settings } = await getStore();
       const goal = { name: name.value.trim(), amount: Number(amount.value) };
       await chrome.storage.local.set({ settings: { ...settings, goalName: goal.name, goalAmount: String(goal.amount) } });
@@ -928,6 +971,7 @@
             <div class="bench"><span class="plate">The judge</span></div>
           </div>
           <div class="spot defendant" data-who="defendant">
+            <div class="figure blank">${globalThis.gicCast.blank()}<span class="speech"><i></i><i></i><i></i></span></div>
             <div class="table"><span class="plate">You</span></div>
           </div>
         </div>
@@ -1285,21 +1329,30 @@
     denied: { title: "Case denied", seal: "plain", icon: "scale", box: "plain", primary: "Keep my money", secondary: "Appeal and buy anyway" },
   };
 
-  function showMvpVerdict(item, settings, history, verdict, reason, signupLine, transcript, meta) {
+  async function showMvpVerdict(item, settings, history, verdict, reason, signupLine, transcript, meta) {
     const V = MVP_VERDICTS[verdict];
+    // Read again: the goal may have just been set from this screen.
+    const fresh = await getStore();
+    const profile = profileFrom(fresh.settings, fresh.history);
+    const hasGoal = !!profile.goal?.target;
+    const price = money(item.total, item.currency);
+    // With a goal, the verdict looks like the Figma "court rules" frame: the
+    // ruling, the goal bar, and "Save $48" as the main action.
+    const primary = hasGoal && verdict !== "approve" ? `Save ${price}` : V.primary;
+    const note = meta.goal ? `Goal set. The court will keep count. Saving ${price} gets you to ${Math.min(100, Math.round(((profile.saved + (item.total || 0)) / profile.goal.target) * 100))}%.` : "";
     showPage(`
       <div class="card-lg">
         <div class="seal ${V.seal} ring">${ICON[V.icon]}</div>
         <p class="kicker center">The court rules…</p>
         <h2 class="h1 center">${esc(V.title)}</h2>
         <div class="reason r-${V.box}">${esc(reason)}</div>
-        ${meta.goal ? `<div class="card signup"><p class="signup-line">${judgeAv()}<span>${esc(`Goal set: ${meta.goal.name}, ${money(meta.goal.amount)}. The court will keep count.`)}</span></p></div>`
+        ${hasGoal ? goalLine(profile, item, note)
           : meta.goalSkipped ? "" : `<div class="card signup" id="signup">
           <p class="signup-line">${judgeAv()}<span>${esc(signupLine)}</span></p>
           <button class="btn outline" data-act="goal">Set my goal</button>
           <p class="tiny">Optional.${guest.on ? " Skip it, and the court forgets this case when you leave." : ""}</p>
         </div>`}
-        <button class="btn primary" data-act="primary">${esc(V.primary)}</button>
+        <button class="btn primary" data-act="primary">${esc(primary)}</button>
         <button class="link" data-act="secondary">${esc(V.secondary)}</button>
       </div>`, "centered");
     const { goal: _g, goalSkipped: _s, ...kept } = meta;
@@ -1542,7 +1595,7 @@ svg { width: 18px; height: 18px; flex: none; }
   box-shadow: 0 18px 50px rgba(43,47,54,.18), 0 2px 6px rgba(43,47,54,.06);
   display: flex; flex-direction: column; gap: 12px; animation: in .22s ease-out;
 }
-.page { position: fixed; inset: 0; background: var(--bill); overflow: auto; animation: fade .2s ease-out; }
+.page { position: fixed; inset: 0; background: var(--bill); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; animation: fade .2s ease-out; }
 .page.centered { display: grid; place-items: center; padding: 24px 16px; }
 .card-lg {
   position: relative; width: 420px; max-width: 100%; background: var(--white); border: 1px solid var(--line);
@@ -1601,7 +1654,16 @@ svg { width: 18px; height: 18px; flex: none; }
 .btn:focus-visible, .link:focus-visible, .chip:focus-visible, .chip-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
 /* ---- forms ---- */
-.two { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; }
+.two { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 10px; }
+.two input { width: 100%; min-width: 0; }
+#gpreview:empty { display: none; }
+.money-in { position: relative; display: block; }
+.money-in > span { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--seal); font-weight: 600; pointer-events: none; }
+.money-in input { padding-left: 26px !important; }
+.field-err { min-height: 0; font-size: 12px; font-weight: 400; color: #a3262a; }
+.field-err:empty { display: none; }
+.goal-note { display: block; margin-top: 8px; font-size: 12px; color: var(--seal); }
+img.thumb { object-fit: contain; background: var(--white); }
 label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--seal); }
 label input { border: 1px solid var(--paper); border-radius: 10px; padding: 9px 11px; background: var(--white); outline: none; font-size: 14px; }
 label input:focus { border-color: var(--blue); }
@@ -1647,8 +1709,8 @@ label input:focus { border-color: var(--blue); }
 .court-stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 8px 16px 28px; }
 /* courtroom scene above the chat */
 .scene {
-  position: relative; width: 660px; max-width: 100%; height: 150px; flex: none; overflow: hidden;
-  background: linear-gradient(var(--white) 0 74%, var(--line) 74% 75%, var(--bill) 75%);
+  position: relative; width: 660px; max-width: 100%; height: 230px; flex: none; overflow: hidden;
+  background: linear-gradient(var(--white) 0 80%, var(--line) 80% 80.6%, var(--bill) 80.6%);
   border: 1px solid var(--line); border-radius: 20px;
   display: grid; grid-template-columns: 1fr 1.3fr 1fr; align-items: end; padding: 0 28px;
 }
@@ -1657,15 +1719,17 @@ label input:focus { border-color: var(--blue); }
 .spot { display: flex; flex-direction: column; align-items: center; }
 .spot .figure svg { opacity: .55; transition: opacity .25s; }
 .spot.talking .figure svg { opacity: 1; }
-.figure { position: relative; width: 52px; height: 52px; margin-bottom: -6px; transition: transform .25s ease-out; }
-.figure svg { width: 52px; height: 52px; }
-.spot.judge .figure { width: 60px; height: 60px; }
-.spot.judge .figure svg { width: 60px; height: 60px; }
+/* Figures are large next to their furniture: their faces carry the scene. */
+.figure { position: relative; width: 96px; height: 96px; margin-bottom: -10px; transition: transform .25s ease-out; }
+.figure svg { width: 96px; height: 96px; }
+.spot.judge .figure { width: 112px; height: 112px; }
+.spot.judge .figure svg { width: 112px; height: 112px; }
+.figure.blank svg { opacity: .8 !important; }
 .spot.talking .figure { transform: translateY(-5px); }
 .bench, .stand, .table { position: relative; display: grid; place-items: center; border-radius: 8px 8px 0 0; }
-.bench { width: 190px; height: 52px; background: var(--ink); }
-.stand { width: 104px; height: 40px; background: var(--white); border: 1.5px dashed var(--paper); border-bottom: 0; }
-.table { width: 120px; height: 34px; background: var(--paper); }
+.bench { width: 190px; height: 50px; background: var(--ink); }
+.stand { width: 112px; height: 38px; background: var(--white); border: 1.5px dashed var(--paper); border-bottom: 0; }
+.table { width: 124px; height: 34px; background: var(--paper); }
 .plate { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: var(--white); color: var(--seal); white-space: nowrap; transition: background .2s, color .2s; }
 .bench .plate { background: rgba(255,255,255,.12); color: var(--white); }
 .spot.talking .plate { background: var(--blue); color: var(--white); }
@@ -1681,7 +1745,7 @@ label input:focus { border-color: var(--blue); }
 .speech i:nth-child(3) { animation-delay: .3s; }
 .spot.thinking .speech { display: flex; }
 .chat {
-  width: 660px; max-width: 100%; height: min(470px, calc(100vh - 290px)); min-height: 300px; display: flex; flex-direction: column;
+  width: 660px; max-width: 100%; height: min(440px, calc(100vh - 360px)); min-height: 280px; display: flex; flex-direction: column;
   background: var(--white); border: 1px solid var(--line); border-radius: 20px; overflow: hidden;
 }
 .chat-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
@@ -1724,7 +1788,7 @@ label input:focus { border-color: var(--blue); }
 .eta span { font-size: 12px; font-weight: 600; color: var(--seal); }
 
 /* ---- court notice (MVP consent) ---- */
-.scrim { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(148, 154, 165, .55); animation: fade .2s ease-out; }
+.scrim { position: fixed; inset: 0; overscroll-behavior: contain; display: grid; place-items: center; padding: 16px; background: rgba(148, 154, 165, .55); animation: fade .2s ease-out; }
 .notice-head { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }
 .notice-head svg { width: 16px; height: 16px; }
 .case-card { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; }
@@ -1861,7 +1925,7 @@ label input:focus { border-color: var(--blue); }
 @keyframes blink { 50% { opacity: .3; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { *, *::after { animation: none !important; transition: none !important; } }
-@media (max-width: 520px) { .scene { padding: 0 8px; height: 130px; } .bench { width: 120px; } .stand, .table { width: 84px; } }
+@media (max-width: 520px) { .scene { padding: 0 8px; height: 170px; } .figure, .figure svg { width: 64px !important; height: 64px !important; } .bench { width: 120px; } .stand, .table { width: 84px; } }
 @media (max-height: 620px) { .scene { display: none; } }
 @media (max-width: 520px) { .msg { max-width: 90%; } .h1 { font-size: 26px; } }
 `;
