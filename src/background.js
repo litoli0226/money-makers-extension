@@ -76,10 +76,8 @@ const MVP_STAGES = {
   mvp_item: {
     who: "judge",
     task: `Stage: mvp_item. The defendant just gave their title; call them by "defendant_name".
-Write "line": one sentence that opens the hearing the way real judges do, "We are here in the matter of <defendant_name> v. the <item.short>, <price>."
-Write "price_line": one short line about the price, built from "price_match" in the case file.
-- If price_match.kind is "table": say the price is about that many of price_match.row.thing (or about half of it if price_match.half is true). Use the word "about". Use no other prices.
-- If price_match.kind is "anecdote": tell a one-line made-up story about your own past in the spirit of price_match.template (for example buying Apple stock back in the day). Never claim a real price for anything else. This one story about yourself is allowed even though you never invent facts, prices or statistics anywhere else.
+Write "line": address the defendant by "defendant_name", say they have brought before the court a purchase of the item's price, tell the joke in "joke" (your own absurdly rich past; reword lightly if you like, keep the punchline), then ask "What are you spending it on?"
+Write "price_line": start by naming the price and what it is, using "item_noun" if present ("A $48 candle."). Then, if "price_match" is not null, add one dry jab built from it, addressed to the defendant by name, for example "I guess you don't like movie tickets, Mr. Moneybags, as that's 3 movie tickets." (or "half of" when price_match.half is true). Use no other prices. These stories about yourself are allowed even though you never invent facts, prices or statistics anywhere else.
 Write "question": ask how the item will make their life better. Ask how, not why.`,
     schema: { line: "string", price_line: "string", question: "string" },
   },
@@ -248,7 +246,12 @@ async function courtTurn({ stage, ctx }) {
     local_time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
     ...ctx,
   };
-  if (stage === "mvp_item") caseFile.price_match = globalThis.gicPrices.comparePrice(ctx.item?.total, (ctx.item?.label || "").length);
+  if (stage === "mvp_item") {
+    const P = globalThis.gicPrices;
+    caseFile.price_match = P.comparePrice(ctx.item?.total);
+    caseFile.item_noun = P.itemNoun(ctx.item?.label);
+    caseFile.joke = ctx.joke; // picked at random by the content script, so variety doesn't depend on temperature
+  }
   if (stage === "mvp_witness") caseFile.findings = globalThis.gicFindings.FINDINGS.map(({ id, line, cite }) => ({ id, line, cite }));
   const schema = jsonSchema(spec.schema);
   const call = settings.mode === "anthropic" ? callAnthropic : callOpenRouter;

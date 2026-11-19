@@ -480,17 +480,17 @@
     const usd = !item.currency || item.currency === "USD";
     const gp = G.gasPrice(deliveryState());
     const gas = usd ? G.gasEquivalent(item.total, gp.perGallon) : null;
-    const what = item.items.length > 1 ? `these ${item.items.length} items` : G.itemNoun(item.label) || "this";
-    const d = new Date();
-    const caseNo = `${d.getMonth() + 1}${String(d.getDate()).padStart(2, "0")}-${Math.round((item.total || 0) * 100)}`;
+    const noun = G.itemNoun(item.label); // "a candle", "headphones" or null
+    const what =
+      item.items.length > 1 ? `these ${item.items.length} items` : !noun ? "this purchase" : /^an? /.test(noun) ? `this ${noun.replace(/^an? /, "")}` : `these ${noun}`;
     showCenteredPanel(`
       <button class="icon-btn notice-x" data-act="close" aria-label="Close">${ICON.x}</button>
       <div class="summons-head">
         <span class="av face ring">${faceOf(cast.judge)}</span>
-        <span><b>${esc(N.kicker)}</b><small>${esc(N.issued(caseNo))}</small></span>
+        <b>${esc(N.kicker)}</b>
       </div>
       <h2 class="h2 charge">${esc(N.charge(gas, what, price))}</h2>
-      ${gas ? `<div class="evidence"><span class="gas-row" aria-hidden="true">${gasIcons(gas)}</span><small>${esc(N.evidence(price, gp, G.GAS))}</small></div>` : ""}
+      ${gas ? `<div class="evidence" aria-hidden="true"><span class="gas-row">${gasIcons(gas)}</span></div>` : ""}
       <p class="muted summons-body">${esc(N.body())}</p>
       <div class="stack">
         <button class="btn primary court-go" data-act="court"><span>${esc(N.start)}</span><span class="time">${ICON.clock}${esc(N.time)}</span></button>
@@ -906,7 +906,9 @@
     state.title = await meetTheJudge(cast, L, item);
     if (state.title == null) return; // left at the door
     const exhibit = item.items.length === 1 ? item.items[0] : null;
-    const exhibitImg = item.items.find((i) => i.image)?.image || "";
+    // Amazon's lazy-load spinners and 1-px placeholders aren't photos.
+    const isPhoto = (u) => /^https?:|^data:image\/svg/.test(u || "") && !/loading|spinner|transparent-pixel|grey-pixel|\.gif(\?|$)/i.test(u);
+    const exhibitImg = item.items.map((i) => i.image).find(isPhoto) || "";
 
     showPage(`
       <div class="topbar"><div class="eta" role="progressbar" aria-label="Time left in your trial"><div class="eta-bar"><i id="etaFill"></i></div><span id="etaText"></span></div><button class="chip-btn" data-act="leave">Leave trial ${ICON.x}</button></div>
@@ -914,7 +916,7 @@
         <div class="scene" id="scene" aria-hidden="true">
           <div class="seal-wall">${ICON.scale}</div>
           <div class="exhibit in" id="exhibit">
-            <span class="ex-img">${exhibitImg ? `<img src="${esc(exhibitImg)}" alt="" />` : ICON.box}</span>
+            <span class="ex-img${exhibitImg ? " loading" : ""}">${exhibitImg ? `<img src="${esc(exhibitImg)}" alt="" />` : ""}</span>
             <span class="ex-text"><small>Exhibit A</small><b>${esc(exhibit ? short : `${item.items.length} items`)}</b><span>${esc(money(item.total, item.currency))}</span></span>
           </div>
           <div class="spot witness" data-who="witness">
@@ -930,7 +932,7 @@
           </div>
         </div>
         <div class="chat" role="log" aria-label="Courtroom">
-          <div class="chat-head">${judgeAv()}<span><b>The judge</b><small>Hearing your case for ${item.items.length > 1 ? "this cart" : `the ${esc(short)}`}</small></span></div>
+          <div class="chat-head"><span class="av judge">${ICON.scale}</span><span><b>The judge</b><small>Hearing your case for ${item.items.length > 1 ? "this cart" : `the ${esc(short)}`}</small></span></div>
           <div class="log" id="log" aria-live="polite"></div>
           <div id="controls"></div>
         </div>
@@ -971,6 +973,24 @@
       drawEta();
     };
     stepDone("name"); // done at the door
+
+    // Exhibit photo: a grey box that pulses gently while it loads, the photo
+    // when it arrives, a plain grey box if it never does.
+    const exImg = scene.querySelector(".ex-img img");
+    if (exImg) {
+      const box = exImg.parentElement;
+      const done = (ok) => {
+        box.classList.remove("loading");
+        if (ok) box.classList.add("loaded");
+        else exImg.remove();
+      };
+      if (exImg.complete && exImg.naturalWidth > 1) done(true);
+      else {
+        exImg.addEventListener("load", () => done(exImg.naturalWidth > 1), { once: true });
+        exImg.addEventListener("error", () => done(false), { once: true });
+        setTimeout(() => box.classList.contains("loading") && done(false), 5000); // never pulse past 5 s (WCAG 2.2.2)
+      }
+    }
 
     on("[data-act=leave]", () => {
       state.left = true;
@@ -1114,12 +1134,20 @@
     await wait(400);
 
     // ----- 2. Item, price line, "how" -----
-    const r0 = await ask("mvp_item");
+    // Joke first (picked here, at random), then the judge reads Exhibit A.
+    const joke = globalThis.gicPrices.anecdote(money(item.total, item.currency));
+    const r0 = await ask("mvp_item", { joke });
     say("judge", r0.line);
     await readPause(r0.line);
     if (r0.price_line) {
+      judgeSpot.classList.add("eyebrow"); // set_expression: reading the exhibit
+      $("#exhibit").classList.add("read");
+      moment("The judge leans in to read Exhibit A.");
+      await wait(900);
       say("judge", r0.price_line);
       await readPause(r0.price_line);
+      judgeSpot.classList.remove("eyebrow");
+      $("#exhibit").classList.remove("read");
     }
     say("judge", r0.question, { question: true });
 
@@ -1788,8 +1816,14 @@ label input:focus { border-color: var(--blue); }
 /* Exhibit A, on the courtroom wall */
 .exhibit { position: absolute; top: 8px; left: 12px; z-index: 1; display: flex; align-items: center; gap: 8px; max-width: 210px; padding: 4px 10px 4px 4px; background: var(--white); border: 1px solid var(--line); border-radius: 9px; opacity: 0; transform: translateY(-6px); transition: opacity .4s, transform .4s ease-out; }
 .exhibit.in { opacity: 1; transform: none; }
-.ex-img { width: 30px; height: 30px; flex: none; border-radius: 7px; background: var(--bill); display: grid; place-items: center; overflow: hidden; color: var(--seal); }
-.ex-img img { width: 100%; height: 100%; object-fit: contain; }
+.ex-img { width: 30px; height: 30px; flex: none; border-radius: 7px; background: var(--line); display: grid; place-items: center; overflow: hidden; color: var(--seal); }
+.ex-img img { width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .3s; }
+.ex-img.loaded { background: var(--white); }
+.ex-img.loaded img { opacity: 1; }
+.ex-img.loading { animation: exPulse 1.6s ease-in-out 3; }
+@keyframes exPulse { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .ex-img.loading { animation: none; } .ex-img img { transition: none; } }
+.exhibit.read { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-tint); transition: box-shadow .3s, border-color .3s; }
 .ex-img svg { width: 18px; height: 18px; }
 .ex-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
 .ex-text small { font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--gold-deep); }

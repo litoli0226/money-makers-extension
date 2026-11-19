@@ -3,53 +3,75 @@
 // Writers: these are the team's own rough numbers, not live prices (live prices
 // are out of the MVP, R4). Check them before testing and edit freely. The judge
 // always says "about", and only uses a row when the price is close to a whole
-// number of it (or about half of it). When nothing fits, the judge tells a story
-// about its own past instead (the Apple-stock line), which is allowed: the judge
-// may invent stories about itself, never prices or facts about the item, the
-// store or the defendant (C3, pending team).
+// number of it (or about half of it). Every trial also opens with a story about
+// the judge's own (absurdly rich) past, which is allowed: the judge may invent
+// stories about itself, never prices or facts about the item, the store or the
+// defendant (C3).
 
 (() => {
   const PRICE_TABLE = [
     { usd: 6, thing: "a coffee from a café", plural: "café coffees" },
     { usd: 15, thing: "a movie ticket", plural: "movie tickets" },
     { usd: 20, thing: "a large pizza", plural: "large pizzas" },
-    { usd: 52, thing: "a tank of gas", plural: "tanks of gas" },
+    // No tank of gas here: the court notice already said the price in gas.
     { usd: 70, thing: "a new video game", plural: "new video games" },
     { usd: 120, thing: "a dinner out for two", plural: "dinners out for two" },
     { usd: 420, thing: "a round-trip flight to Los Angeles", plural: "round-trip flights to Los Angeles" },
   ];
 
-  // The judge's own past, for prices with no good row. {p} = the price.
+  // The judge's own past: the joke that opens every trial. The judge is
+  // absurdly rich and mentions it in passing. {p} = the price. Writers: add
+  // freely; the code picks one at random each trial, so variety doesn't depend
+  // on the model's temperature.
   const ANECDOTES = [
+    "I bought my first yacht with that same amount.",
     "Ah! A good {p} bought me my stock in Apple, back in the day.",
-    "{p}. The court once paid that for a gavel. Worth every cent.",
-    "{p}. In my day, that was a month of law school lunches.",
+    "In my day, {p} bought a house. A small one, but on a nice street.",
+    "I once tipped a valet {p}. He still sends me a card every Christmas.",
+    "I keep {p} in my other robe, for emergencies.",
+    "I lent a man {p} in 1987. He owns a bank now.",
+    "The court spends {p} on gavel polish. Weekly.",
+    "I paid {p} for this gavel. It has never lost a case.",
+    "I found {p} in a coat once. The coat was mine. So was the building.",
   ];
+  const pick = (list, rand = Math.random) => list[Math.floor(rand() * list.length)];
+  function anecdote(priceText, rand) {
+    return pick(ANECDOTES, rand).replace("{p}", priceText);
+  }
 
-  // Returns { kind: "table", row, n, half } or { kind: "anecdote", line }.
-  function comparePrice(price, seed = 0) {
+  // The jab after the judge reads Exhibit A. {name} = "Mr. Moneybags".
+  const JABS = {
+    many: [
+      "I guess you don't like {plural}, {name}, as that's {n} {plural}.",
+      "That's {n} {plural}, {name}. The court will remember that.",
+      "You could have had {n} {plural}, {name}. The court notes it.",
+    ],
+    one: ["I guess you don't like {plural}, {name}. That's {thing}.", "That's {thing}, {name}. The court will remember that."],
+    half: ["That's half of {thing}, {name}. The other half is your business."],
+  };
+
+  // Returns { kind: "table", row, n, half } or null when no row fits.
+  function comparePrice(price) {
     if (price == null || !(price > 0)) return null;
     let best = null;
     for (const row of PRICE_TABLE) {
       const ratio = price / row.usd;
       const options = [];
-      if (ratio >= 0.42 && ratio <= 0.58) options.push({ n: 0.5, err: Math.abs(ratio - 0.5) / 0.5 });
+      // Halves carry a small penalty: "3 video games" lands better than "half a flight".
+      if (ratio >= 0.42 && ratio <= 0.58) options.push({ n: 0.5, err: Math.abs(ratio - 0.5) / 0.5 + 0.05 });
       const n = Math.round(ratio);
       if (n >= 1 && n <= 5) options.push({ n, err: Math.abs(ratio - n) / n });
       for (const o of options) if (o.err <= 0.15 && (!best || o.err <= best.err)) best = { row, ...o };
     }
-    if (best) return { kind: "table", row: best.row, n: best.n, half: best.n === 0.5 };
-    return { kind: "anecdote", template: ANECDOTES[Math.abs(seed) % ANECDOTES.length] };
+    return best ? { kind: "table", row: best.row, n: best.n, half: best.n === 0.5 } : null;
   }
 
-  // Scripted wording. In AI mode the model writes its own wording from the same match.
-  function priceLine(price, priceText, seed = 0) {
-    const m = comparePrice(price, seed);
+  // Scripted wording of the jab. In AI mode the model writes its own from the same match.
+  function priceJab(price, name, rand) {
+    const m = comparePrice(price);
     if (!m) return "";
-    if (m.kind === "anecdote") return m.template.replace("{p}", priceText);
-    if (m.half) return `${priceText}. They say that's about half of ${m.row.thing} today.`;
-    if (m.n === 1) return `${priceText}. They say that's about ${m.row.thing} today.`;
-    return `${priceText}. They say that's about ${m.n} ${m.row.plural} today.`;
+    const t = m.half ? pick(JABS.half, rand) : m.n === 1 ? pick(JABS.one, rand) : pick(JABS.many, rand);
+    return t.replaceAll("{plural}", m.row.plural).replaceAll("{thing}", m.row.thing).replaceAll("{n}", String(m.n)).replaceAll("{name}", name);
   }
 
   // The court notice's anchor: gas, a cost most American adults pay for, until
@@ -130,5 +152,5 @@
     return best.plural ? w : `${/^[aeiou]/.test(w) ? "an" : "a"} ${w}`;
   }
 
-  globalThis.gicPrices = { PRICE_TABLE, ANECDOTES, comparePrice, priceLine, GAS, STATE_GAS, stateFromZip, gasPrice, gasEquivalent, itemNoun };
+  globalThis.gicPrices = { PRICE_TABLE, ANECDOTES, JABS, anecdote, comparePrice, priceJab, GAS, STATE_GAS, stateFromZip, gasPrice, gasEquivalent, itemNoun };
 })();

@@ -224,13 +224,9 @@
       head: "Court notice",
       // A summons from the court. The gas figure appears once, in the charge.
       kicker: "Summons",
-      issued: (no) => `Issued by the judge · Case no. ${no}`,
-      charge: (g, what, price) =>
-        g ? `The court is charging you with considering spending ${g.text} on ${what}.` : `The court is charging you with considering spending ${price} on ${what}.`,
-      evidence: (price, gp, G) =>
-        `${price} at ${gp.where === "US" ? "the US average" : `${gp.where}'s average`} of $${gp.perGallon.toFixed(2)} a gallon, ${G.gallonsPerTank}-gallon tank (${G.source}, ${G.asOf})`,
+      charge: (g, what, price) => `Your case: spending ${g ? g.text : price} on ${what}.`,
       body: () => "Plead your case and get the court's opinion before you buy.",
-      start: "Plead my case",
+      start: "Take it to court",
       time: "2 min",
       skip: "Skip court",
       never: "Don't ask about this item",
@@ -370,10 +366,13 @@
     const f = mvpFacts(ctx);
     switch (stage) {
       case "mvp_item": {
-        const seed = (ctx.item.label || "").length;
+        const P = globalThis.gicPrices;
+        const name = f.defendant;
+        const what = (ctx.item.items || []).length > 1 ? "cart" : P.itemNoun(ctx.item.label);
+        const label = !what ? `A ${f.price} purchase.` : /^an? /.test(what) ? `A ${f.price} ${what.replace(/^an? /, "")}.` : what === "cart" ? `A ${f.price} cart.` : `${f.price} ${what}.`;
         return {
-          line: MVP_LINES.item(f),
-          price_line: globalThis.gicPrices?.priceLine(ctx.item.total, f.price, seed) || "",
+          line: `${name}, you have brought before the court a ${f.price} purchase. ${ctx.joke || P.anecdote(f.price)} What are you spending it on?`,
+          price_line: [label, P.priceJab(ctx.item.total, name)].filter(Boolean).join(" "),
           question: MVP_LINES.how(f),
         };
       }
