@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Guilty If Charged · Privacy policy</title>
+  <link rel="stylesheet" href="ui.css" />
+  <style>
+    main { max-width: 680px; margin: 0 auto; padding: 40px 20px 80px; line-height: 1.55; }
+    h1 { font-size: 28px; margin: 8px 0 4px; }
+    h2 { font-size: 18px; margin: 28px 0 6px; }
+    p, li { font-size: 15px; color: var(--ink); }
+    .updated { color: var(--seal); font-size: 13px; }
+    .draft { background: var(--gold-tint); color: var(--gold-deep); padding: 10px 14px; border-radius: 10px; font-size: 13px; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    th { color: var(--seal); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand"><img src="icons/logo.svg" alt="" />Guilty If Charged</div>
+    <h1>Privacy policy</h1>
+    <p class="updated">Last updated November 19, 2026</p>
+    <p class="draft">Draft for the Money Makers student project (Carnegie Mellon, Persuasive Design). Not yet reviewed by a lawyer. Keep it true to the code: if the code changes what it collects or where it sends it, change this page in the same commit.</p>
+
+    <h2>The short version</h2>
+    <ul>
+      <li>The extension asks you about a purchase before you check out on Amazon. You can skip it every time.</li>
+      <li>By default you're a guest: when you leave the trial, the court forgets the case. If you set a savings goal at the end, this browser keeps your cases so the court can hold you to it.</li>
+      <li>Nothing goes to Amazon or to our team. We don't sell data or show ads.</li>
+      <li>If the extension is set to use an AI model, your answers are sent to that model's provider to write the judge's lines (details below).</li>
+    </ul>
+
+    <h2>What the extension reads and keeps</h2>
+    <table>
+      <tr><th>Data</th><th>Why</th><th>Where it goes</th></tr>
+      <tr><td>Item names, prices and photos on the Amazon page you're buying from</td><td>To put the case before the court and compare the price (for example, to tanks of gas)</td><td>Stays in this browser</td></tr>
+      <tr><td>The title you pick and what you type during the trial</td><td>To run the trial and reach a verdict</td><td>Stays in this browser, or goes to the AI provider when AI mode is on</td></tr>
+      <tr><td>The verdict, what you did next and how long the trial took</td><td>So you can look back at your cases and the court can weigh new ones against your goal</td><td>Kept in this browser only if you set a savings goal (or a tester turned on "Keep" in Settings)</td></tr>
+      <tr><td>Your savings goal (name and amount)</td><td>To hold you accountable next time</td><td>Kept in this browser</td></tr>
+      <tr><td>Items you asked never to be asked about, and which witness spoke last</td><td>So the court doesn't ask again, and doesn't repeat itself</td><td>Kept in this browser</td></tr>
+    </table>
+    <p>"Kept in this browser" means Chrome's extension storage on this computer. It is not encrypted and not synced to other devices. Removing the extension erases it, and Settings → Clear history erases it anytime.</p>
+
+    <h2>AI mode</h2>
+    <p>In scripted mode (no AI), nothing you type leaves this browser.</p>
+    <p>In AI mode, each step of the trial sends the item, its price and your answers so far to the AI service set in Settings, which returns the judge's next line:</p>
+    <ul>
+      <li><b>OpenRouter</b> passes the request to one of the hosts that run the chosen model (for example, DeepSeek V4 Flash). The extension asks OpenRouter to use only hosts that don't store your data or train on it (<code>data_collection: deny</code>). OpenRouter itself doesn't keep prompts unless an account opts in to logging.</li>
+      <li><b>Anthropic</b> receives the request directly when Claude is selected.</li>
+    </ul>
+    <p>Your email, name and Amazon account are never sent. Please don't type anything you wouldn't want a service provider to read.</p>
+
+    <h2>Your choices</h2>
+    <ul>
+      <li>Skip the court, or choose "Don't ask about this item".</li>
+      <li>Stay a guest: skip the savings goal, and the court forgets the case.</li>
+      <li>Erase everything: Settings → Clear history, or remove the extension.</li>
+    </ul>
+
+    <h2>Contact</h2>
+    <p>Questions about this page: the Money Makers team, Carnegie Mellon University, Human-Computer Interaction Institute. <span class="draft">Add a team email before release.</span></p>
+  </main>
+</body>
+</html>

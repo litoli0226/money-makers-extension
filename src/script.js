@@ -222,28 +222,21 @@
     // Court notice: the consent screen before the trial (Matthew's quick check, restyled).
     notice: {
       head: "Court notice",
-      // The headline asks the price as something the person already pays for.
-      title: (g) => (g ? `Is this worth ${g.text}?` : "Is this the right purchase to make?"),
-      body: () => "Plead your case before you buy.",
+      // Said by the judge, in a speech bubble. The gas figure appears once.
+      title: (g, price) => (g ? `${price}. That's ${g.text}.` : `${price}. A considerable sum.`),
+      body: () => "Worth it? Plead your case before you buy.",
       gasNote: (G) => `Gas at $${G.perGallon.toFixed(2)} a gallon (${G.source}, ${G.asOf}), ${G.gallonsPerTank}-gallon tank.`,
-      advice: "The verdict is advice. You always decide.",
       start: "Take it to court",
       time: "2 min",
       skip: "Skip court",
       never: "Don't ask about this item",
-      // Disclosure. Keep it true to the code: see "What the court keeps" in README.
-      keepsLabel: "What the court keeps",
-      keeps: (ai, guest) =>
-        [
-          "No account or sign-up needed.",
-          guest
-            ? "As a guest, the court forgets this case when you leave. If you set a savings goal at the end, this browser keeps your cases (item, price, what you type, verdict) so the court can hold you to it. Nothing goes to Amazon or to our team."
-            : "This browser keeps the item, its price, what you type, the verdict and how long the trial took, so you can look back at your cases. Nothing goes to Amazon or to our team.",
-          ai
-            ? `To write the judge's lines, your answers, the item and its price are sent to ${ai}. Nothing else is sent.`
-            : "The judge's lines are written by the extension itself. Nothing you type leaves this browser.",
-          "Erase it anytime: Settings, then Clear history. Removing the extension erases it too.",
-        ],
+      // Just-in-time privacy notice (Chrome Web Store "prominent disclosure"):
+      // what is collected, where it goes, then a link to the full policy.
+      privacy: ({ ai, guest }) =>
+        `${ai ? `Taking it to court sends your answers to ${ai} to write the judge's lines.` : "Your answers stay in this browser."} ${
+          guest ? "Nothing is saved unless you set a goal at the end." : "Your cases are saved in this browser."
+        }`,
+      privacyLink: "Privacy policy",
     },
     name: "Forgive me, what's your name, defendant?",
     // "We are here in the matter of ..." is how real judges open a hearing.

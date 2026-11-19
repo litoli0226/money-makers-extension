@@ -201,6 +201,9 @@ async function callOpenRouter(settings, system, schema, caseFile) {
         { role: "user", content: JSON.stringify(caseFile, null, 2) },
       ],
       response_format: { type: "json_schema", json_schema: { name: "turn", strict: true, schema } },
+      // Only hosts that don't store prompts or train on them, unless a tester
+      // switches this to "allow" in Settings. Matches privacy.html.
+      provider: { data_collection: settings.aiDataPolicy === "allow" ? "allow" : "deny" },
     }),
   });
   const body = await res.json().catch(() => ({}));
@@ -286,6 +289,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
   if (msg?.type === "openOptions") chrome.runtime.openOptionsPage();
+  if (msg?.type === "openPrivacy") chrome.tabs.create({ url: chrome.runtime.getURL("privacy.html") });
 });
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {

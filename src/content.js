@@ -455,6 +455,13 @@
     return `<span class="pump">${ICON.pump}</span>` + fills.map((f) => `<span class="tank"><span style="width:${Math.max(Math.round(f * 100), 6)}%"></span></span>`).join("") + more;
   }
 
+  // Who sees the answers, short form, for the notice's privacy line.
+  function aiShort(settings) {
+    if (settings.mode === "anthropic") return "Anthropic (Claude)";
+    if (settings.mode === "openrouter") return `OpenRouter (${(settings.openrouterModel || "anthropic/claude-haiku-5.5").split("/").pop()})`;
+    return null;
+  }
+
   function showCourtNotice(item, settings, history) {
     const N = globalThis.gicMvpLines.notice;
     const cast = globalThis.gicCast.castCourt();
@@ -466,22 +473,22 @@
     const gas = item.currency && item.currency !== "USD" ? null : G.gasEquivalent(item.total);
     showCenteredPanel(`
       <button class="icon-btn notice-x" data-act="close" aria-label="Close">${ICON.x}</button>
-      ${gas ? `<div class="gas-hero" title="${esc(N.gasNote(G.GAS))}">
-          <span class="gas-row" aria-hidden="true">${gasIcons(gas)}</span>
-          <span class="gas-eq">${esc(price)} = ${esc(gas.text)}</span>
-        </div>` : ""}
-      <h2 class="h2 notice-q">${esc(N.title(gas))}</h2>
-      <p class="muted notice-sub">${esc(N.body())}</p>
+      <div class="notice-judge"><span class="av face">${faceOf(cast.judge)}</span><span>The judge</span></div>
+      <div class="notice-bubble">
+        ${gas ? `<span class="gas-row" aria-hidden="true" title="${esc(N.gasNote(G.GAS))}">${gasIcons(gas)}</span>` : ""}
+        <h2 class="h2">${esc(N.title(gas, price))}</h2>
+        <p>${esc(N.body())}</p>
+      </div>
       <div class="stack">
         <button class="btn primary court-go" data-act="court"><span>${esc(N.start)}</span><span class="time">${ICON.clock}${esc(N.time)}</span></button>
         <button class="btn outline" data-act="skip">${esc(N.skip)}</button>
       </div>
-      <div class="notice-foot">
-        <details class="keeps"><summary>${esc(N.keepsLabel)}</summary><ul>${[N.advice, ...N.keeps(aiProvider(settings), guest.on), N.gasNote(G.GAS)]
-          .map((t) => `<li>${esc(t)}</li>`)
-          .join("")}</ul></details>
-        <button class="link" data-act="never">${esc(N.never)}</button>
-      </div>`, "notice");
+      <button class="link notice-never" data-act="never">${esc(N.never)}</button>
+      <p class="notice-privacy">${esc(N.privacy({ ai: aiShort(settings), guest: guest.on }))} <a href="#" data-act="privacy">${esc(N.privacyLink)}</a></p>`, "notice");
+    on("[data-act=privacy]", (e) => {
+      e?.preventDefault?.();
+      chrome.runtime.sendMessage({ type: "openPrivacy" });
+    });
     $("[data-act=court]").focus();
     const skip = async (outcome) => {
       await logOutcome(item, outcome, { where: "notice", format: "mvp" });
@@ -819,7 +826,7 @@
                   </label>
                   <label class="gov-field grow">Last name
                     <input id="surname" value="Moneybags" readonly aria-readonly="true" aria-describedby="surnameHelp" />
-                    <small id="surnameHelp">Assigned by the court.</small>
+                    <small id="surnameHelp">Not editable</small>
                   </label>
                 </div>
               </fieldset>
@@ -1688,19 +1695,18 @@ label input:focus { border-color: var(--blue); }
 .gas-more { font-size: 13px; font-weight: 700; color: var(--blue); }
 .gas-eq { font-size: 15px; font-weight: 700; color: var(--blue); }
 .gas-note { font-size: 11px; color: var(--seal); }
-.panel.notice { position: relative; width: 340px; }
+.panel.notice { position: relative; width: 360px; text-align: left; }
 .notice-x { position: absolute; top: 12px; right: 12px; }
-.gas-hero { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 0 2px; }
-.gas-hero .gas-row { justify-content: center; }
-.gas-hero .tank { width: 34px; height: 18px; }
-.gas-hero .pump svg { width: 24px; height: 24px; }
-.notice-q { text-align: center; margin: 4px 0 0; }
-.notice-sub { text-align: center; margin: 0 0 4px; }
-.notice-foot { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
-.notice-foot .keeps { flex: 1 1 100%; order: 2; }
-.notice-foot .link { order: 1; padding: 0; }
-.notice-foot .keeps summary { list-style: none; font-weight: 400; color: var(--seal); font-size: 13px; }
-.notice-foot .keeps summary::-webkit-details-marker { display: none; }
+.notice-judge { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--seal); }
+.notice-judge .av.face { width: 36px; height: 36px; }
+.notice-bubble { position: relative; margin-left: 18px; background: var(--white); border: 1px solid var(--line); border-radius: 4px 16px 16px 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.notice-bubble .h2 { margin: 0; font-size: 22px; line-height: 1.25; }
+.notice-bubble p { margin: 0; font-size: 15px; color: var(--seal); }
+.notice-bubble .gas-row { justify-content: flex-start; margin-bottom: 4px; }
+.notice-bubble .tank { width: 30px; height: 16px; }
+.notice-never { align-self: center; text-align: center; }
+.notice-privacy { margin: 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.45; color: var(--seal); text-align: left; }
+.notice-privacy a { color: var(--blue); text-decoration: underline; }
 .notice-ask { display: flex; gap: 12px; align-items: flex-start; }
 .notice-ask .h2 { margin: 0 0 4px; }
 .notice-ask .muted { margin: 0; }
@@ -1732,26 +1738,26 @@ label input:focus { border-color: var(--blue); }
 .door-ask .bubble { margin: 0; font-size: 17px; font-weight: 600; padding: 12px 16px; background: var(--white); border: 1px solid var(--line); border-radius: 14px; }
 /* FORM GIC-1: deliberately plain, like a government web form, so the fixed
    last name reads as a form field you were never allowed to fill in. */
-.gov-form { width: 100%; background: #fff; border: 1px solid #a9a9a9; border-radius: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; color: #222; text-align: left; box-shadow: 1px 1px 0 #d4d4d4; }
-.gov-top { display: flex; justify-content: space-between; padding: 4px 8px; background: #e6e6e6; border-bottom: 1px solid #a9a9a9; font-size: 10px; letter-spacing: .04em; color: #555; }
-.gov-form fieldset { margin: 10px 10px 0; padding: 6px 10px 12px; border: 1px solid #c0c0c0; }
-.gov-form legend { padding: 0 4px; font-size: 12px; font-weight: 700; }
-.gov-note { margin: 0 0 8px; font-size: 11px; color: #555; }
+.gov-form { width: 100%; background: var(--white); border: 1px solid var(--paper); border-radius: 4px; padding: 0; font-family: inherit; color: var(--ink); text-align: left; box-shadow: 0 1px 0 var(--line); overflow: hidden; }
+.gov-top { display: flex; justify-content: space-between; padding: 5px 10px; background: var(--bill); border-bottom: 1px solid var(--paper); font-size: 10px; font-weight: 600; letter-spacing: .08em; color: var(--seal); }
+.gov-form fieldset { margin: 12px 12px 0; padding: 6px 12px 14px; border: 1px solid var(--line); border-radius: 2px; }
+.gov-form legend { padding: 0 4px; font-size: 13px; font-weight: 700; }
+.gov-note { margin: 0 0 10px; font-size: 12px; color: var(--seal); }
 .gov-row { display: flex; gap: 12px; align-items: flex-start; }
-.gov-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-weight: 700; color: #222; }
+.gov-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: var(--ink); }
 .gov-field.grow { flex: 1; }
-.gov-form select, .gov-form input { font: 13px Arial, Helvetica, sans-serif; color: #111; height: 24px; padding: 2px 4px; border: 1px solid #767676; border-radius: 0; background: #fff; box-shadow: inset 1px 1px 1px rgba(0,0,0,.12); outline: none; }
-.gov-form select { min-width: 110px; }
-.gov-form select:focus, .gov-form input:focus { outline: 2px solid #3b6fd6; outline-offset: 0; }
-.gov-form input[readonly] { background: #ebebe4; color: #6d6d6d; cursor: not-allowed; }
-.gov-field small { font-size: 11px; font-weight: 400; color: #666; }
+.gov-form select, .gov-form input { font: 14px/1.2 inherit; font-family: inherit; color: var(--ink); height: 32px; padding: 4px 8px; border: 1px solid var(--slate); border-radius: 2px; background: var(--white); box-shadow: inset 0 1px 2px rgba(43,47,54,.08); outline: none; }
+.gov-form select { min-width: 120px; }
+.gov-form select:focus, .gov-form input:focus { outline: 2px solid var(--blue); outline-offset: 0; }
+.gov-form input[readonly] { background: var(--bill); color: var(--seal); border-style: dashed; cursor: not-allowed; }
+.gov-field small { font-size: 11px; font-weight: 400; color: var(--seal); }
 .gov-field.nope input { animation: nope .3s; }
-.gov-field.nope small { color: #b00020; }
+.gov-field.nope small { color: #a3262a; }
 @keyframes nope { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
-.gov-actions { display: flex; justify-content: flex-end; padding: 10px; }
-.gov-btn { font: 13px Arial, Helvetica, sans-serif; color: #111; padding: 3px 18px; border: 1px solid #767676; border-radius: 2px; background: linear-gradient(#fdfdfd, #dcdcdc); cursor: pointer; }
-.gov-btn:hover:not(:disabled) { background: linear-gradient(#fff, #e8e8e8); }
-.gov-btn:disabled { color: #8d8d8d; border-color: #b5b5b5; cursor: default; }
+.gov-actions { display: flex; justify-content: flex-end; padding: 12px; }
+.gov-btn { font: inherit; font-size: 14px; font-weight: 600; color: var(--white); padding: 7px 22px; border: 1px solid var(--ink); border-radius: 2px; background: var(--ink); cursor: pointer; }
+.gov-btn:hover:not(:disabled) { background: #3a3f48; }
+.gov-btn:disabled { background: var(--line); border-color: var(--paper); color: var(--seal); cursor: default; }
 .door-gavel { margin: 0; min-height: 22px; font-size: 18px; font-weight: 700; color: var(--ink); }
 .door.gavel .door-bench { animation: thud .35s ease-out; }
 .door.gavel .door-gavel { animation: in .3s ease-out; }
