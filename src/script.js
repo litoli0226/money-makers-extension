@@ -222,11 +222,15 @@
     // Court notice: the consent screen before the trial (Matthew's quick check, restyled).
     notice: {
       head: "Court notice",
-      // Said by the judge, in a speech bubble. The gas figure appears once.
-      title: (g, price) => (g ? `${price}. That's ${g.text}.` : `${price}. A considerable sum.`),
-      body: () => "Worth it? Plead your case before you buy.",
-      gasNote: (G) => `Gas at $${G.perGallon.toFixed(2)} a gallon (${G.source}, ${G.asOf}), ${G.gallonsPerTank}-gallon tank.`,
-      start: "Take it to court",
+      // A summons from the court. The gas figure appears once, in the charge.
+      kicker: "Summons",
+      issued: (no) => `Issued by the judge · Case no. ${no}`,
+      charge: (g, what, price) =>
+        g ? `The court is charging you with considering spending ${g.text} on ${what}.` : `The court is charging you with considering spending ${price} on ${what}.`,
+      evidence: (price, gp, G) =>
+        `${price} at ${gp.where === "US" ? "the US average" : `${gp.where}'s average`} of $${gp.perGallon.toFixed(2)} a gallon, ${G.gallonsPerTank}-gallon tank (${G.source}, ${G.asOf})`,
+      body: () => "Plead your case and get the court's opinion before you buy.",
+      start: "Plead my case",
       time: "2 min",
       skip: "Skip court",
       never: "Don't ask about this item",

@@ -455,6 +455,13 @@
     return `<span class="pump">${ICON.pump}</span>` + fills.map((f) => `<span class="tank"><span style="width:${Math.max(Math.round(f * 100), 6)}%"></span></span>`).join("") + more;
   }
 
+  // Where the order is going, from Amazon's "Deliver to" line ("Pittsburgh 15213").
+  function deliveryState() {
+    const t = document.querySelector("#glow-ingress-line2, #nav-global-location-slot")?.textContent || "";
+    const zip = t.match(/\b(\d{5})\b/)?.[1];
+    return zip ? globalThis.gicPrices.stateFromZip(zip) : null;
+  }
+
   // Who sees the answers, short form, for the notice's privacy line.
   function aiShort(settings) {
     if (settings.mode === "anthropic") return "Anthropic (Claude)";
@@ -470,21 +477,27 @@
     const price = money(item.total, item.currency);
     startGuest(settings);
     const G = globalThis.gicPrices;
-    const gas = item.currency && item.currency !== "USD" ? null : G.gasEquivalent(item.total);
+    const usd = !item.currency || item.currency === "USD";
+    const gp = G.gasPrice(deliveryState());
+    const gas = usd ? G.gasEquivalent(item.total, gp.perGallon) : null;
+    const what = item.items.length > 1 ? `these ${item.items.length} items` : G.itemNoun(item.label) || "this";
+    const d = new Date();
+    const caseNo = `${d.getMonth() + 1}${String(d.getDate()).padStart(2, "0")}-${Math.round((item.total || 0) * 100)}`;
     showCenteredPanel(`
       <button class="icon-btn notice-x" data-act="close" aria-label="Close">${ICON.x}</button>
-      <div class="notice-judge"><span class="av face">${faceOf(cast.judge)}</span><span>The judge</span></div>
-      <div class="notice-bubble">
-        ${gas ? `<span class="gas-row" aria-hidden="true" title="${esc(N.gasNote(G.GAS))}">${gasIcons(gas)}</span>` : ""}
-        <h2 class="h2">${esc(N.title(gas, price))}</h2>
-        <p>${esc(N.body())}</p>
+      <div class="summons-head">
+        <span class="av face ring">${faceOf(cast.judge)}</span>
+        <span><b>${esc(N.kicker)}</b><small>${esc(N.issued(caseNo))}</small></span>
       </div>
+      <h2 class="h2 charge">${esc(N.charge(gas, what, price))}</h2>
+      ${gas ? `<div class="evidence"><span class="gas-row" aria-hidden="true">${gasIcons(gas)}</span><small>${esc(N.evidence(price, gp, G.GAS))}</small></div>` : ""}
+      <p class="muted summons-body">${esc(N.body())}</p>
       <div class="stack">
         <button class="btn primary court-go" data-act="court"><span>${esc(N.start)}</span><span class="time">${ICON.clock}${esc(N.time)}</span></button>
         <button class="btn outline" data-act="skip">${esc(N.skip)}</button>
       </div>
       <button class="link notice-never" data-act="never">${esc(N.never)}</button>
-      <p class="notice-privacy">${esc(N.privacy({ ai: aiShort(settings), guest: guest.on }))} <a href="#" data-act="privacy">${esc(N.privacyLink)}</a></p>`, "notice");
+      <p class="notice-privacy">${esc(N.privacy({ ai: aiShort(settings), guest: guest.on }))} <a href="#" data-act="privacy">${esc(N.privacyLink)}</a></p>`, "notice summons");
     on("[data-act=privacy]", (e) => {
       e?.preventDefault?.();
       chrome.runtime.sendMessage({ type: "openPrivacy" });
@@ -845,7 +858,9 @@
         sur.parentElement.classList.remove("nope");
         void sur.offsetWidth;
         sur.parentElement.classList.add("nope");
-        $("#surnameHelp").textContent = "This field is completed by the court.";
+        const lines = ["You cannot change your own last name.", "Please don't try to change your last name. We know who you are."];
+        nope.n = (nope.n || 0) + 1;
+        $("#surnameHelp").textContent = lines[Math.min(nope.n, lines.length) - 1];
       };
       sur.addEventListener("mousedown", nope);
       sur.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key !== "Tab") nope(); });
@@ -1697,13 +1712,19 @@ label input:focus { border-color: var(--blue); }
 .gas-note { font-size: 11px; color: var(--seal); }
 .panel.notice { position: relative; width: 360px; text-align: left; }
 .notice-x { position: absolute; top: 12px; right: 12px; }
-.notice-judge { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--seal); }
-.notice-judge .av.face { width: 36px; height: 36px; }
-.notice-bubble { position: relative; margin-left: 18px; background: var(--white); border: 1px solid var(--line); border-radius: 4px 16px 16px 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; text-align: left; }
-.notice-bubble .h2 { margin: 0; font-size: 22px; line-height: 1.25; }
-.notice-bubble p { margin: 0; font-size: 15px; color: var(--seal); }
-.notice-bubble .gas-row { justify-content: flex-start; margin-bottom: 4px; }
-.notice-bubble .tank { width: 30px; height: 16px; }
+.panel.summons { border: 1px solid var(--paper); box-shadow: 0 0 0 5px var(--white), 0 0 0 6px var(--line), 0 18px 40px rgba(43,47,54,.18); }
+.summons-head { display: flex; align-items: center; gap: 12px; padding-right: 28px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.summons-head .av.face { width: 44px; height: 44px; }
+.av.face.ring { box-shadow: 0 0 0 2px var(--white), 0 0 0 3px var(--gold); }
+.summons-head > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.summons-head b { font-size: 12px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--gold-deep); }
+.summons-head small { font-size: 12px; color: var(--seal); }
+.charge { margin: 0; font-size: 21px; line-height: 1.3; text-align: left; }
+.evidence { display: flex; flex-direction: column; gap: 6px; }
+.evidence .gas-row { justify-content: flex-start; }
+.evidence .tank { width: 30px; height: 16px; }
+.evidence small { font-size: 11px; color: var(--seal); }
+.summons-body { margin: 0; text-align: left; }
 .notice-never { align-self: center; text-align: center; }
 .notice-privacy { margin: 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.45; color: var(--seal); text-align: left; }
 .notice-privacy a { color: var(--blue); text-decoration: underline; }
