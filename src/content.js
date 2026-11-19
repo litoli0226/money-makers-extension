@@ -463,7 +463,7 @@
 
   // The judge's head, cropped from the cast figure, for chat avatars.
   let judgeFace = null;
-  const faceOf = (fig) => fig.replace('viewBox="0 0 64 64"', 'viewBox="13 5 38 38"');
+  const faceOf = (fig) => fig.replace('viewBox="0 0 64 64"', 'viewBox="10 3 44 44"');
   const judgeAv = () => (judgeFace ? `<span class="av face">${judgeFace}</span>` : `<span class="av judge">${ICON.scale}</span>`);
 
   // Gas: a pump, then one tank gauge per tank (at most 8), the last one filled
@@ -921,7 +921,9 @@
         sel.disabled = btn.disabled = true;
         const door = layer.querySelector(".door");
         sur.disabled = true;
-        door.querySelector(".door-bench .plate").textContent = `${sel.value} Moneybags v. ${globalThis.gicShortName(item.label)}`;
+        const noun = globalThis.gicPrices.itemNoun(item.label);
+        const versus = item.items.length > 1 ? "the cart" : noun ? `the ${noun.replace(/^an? /, "")}` : globalThis.gicShortName(item.label);
+        door.querySelector(".door-bench .plate").textContent = `${sel.value} Moneybags v. ${versus}`;
         door.querySelector(".door-gavel").textContent = "Court is in session.";
         door.classList.add("gavel");
         await wait(1100);
@@ -959,7 +961,6 @@
         <div class="scene" id="scene" aria-hidden="true">
           <div class="seal-wall">${ICON.scale}</div>
           <div class="exhibit in" id="exhibit">
-            <span class="ex-img${exhibitImg ? " loading" : ""}">${exhibitImg ? `<img src="${esc(exhibitImg)}" alt="" />` : ""}</span>
             <span class="ex-text"><small>Exhibit A</small><b>${esc(exhibit ? short : `${item.items.length} items`)}</b><span>${esc(money(item.total, item.currency))}</span></span>
           </div>
           <div class="spot witness" data-who="witness">
@@ -1018,22 +1019,20 @@
     };
     stepDone("name"); // done at the door
 
-    // Exhibit photo: a grey box that pulses gently while it loads, the photo
-    // when it arrives, a plain grey box if it never does.
-    const exImg = scene.querySelector(".ex-img img");
-    if (exImg) {
-      const box = exImg.parentElement;
-      const done = (ok) => {
-        box.classList.remove("loading");
-        if (ok) box.classList.add("loaded");
-        else exImg.remove();
+    // Exhibit A is a text lockup. If the item has a photo and it loads, the
+    // lockup gains a thumbnail; if not, nothing changes.
+    if (exhibitImg) {
+      const probe = new Image();
+      probe.onload = () => {
+        if (probe.naturalWidth < 2) return;
+        const box = document.createElement("span");
+        box.className = "ex-img";
+        box.appendChild(probe);
+        probe.alt = "";
+        scene.querySelector("#exhibit")?.prepend(box);
+        scene.querySelector("#exhibit")?.classList.add("has-img");
       };
-      if (exImg.complete && exImg.naturalWidth > 1) done(true);
-      else {
-        exImg.addEventListener("load", () => done(exImg.naturalWidth > 1), { once: true });
-        exImg.addEventListener("error", () => done(false), { once: true });
-        setTimeout(() => box.classList.contains("loading") && done(false), 5000); // never pulse past 5 s (WCAG 2.2.2)
-      }
+      probe.src = exhibitImg;
     }
 
     on("[data-act=leave]", () => {
@@ -1709,7 +1708,7 @@ label input:focus { border-color: var(--blue); }
 .court-stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 8px 16px 28px; }
 /* courtroom scene above the chat */
 .scene {
-  position: relative; width: 660px; max-width: 100%; height: 230px; flex: none; overflow: hidden;
+  position: relative; width: 660px; max-width: 100%; height: 250px; flex: none; overflow: hidden;
   background: linear-gradient(var(--white) 0 80%, var(--line) 80% 80.6%, var(--bill) 80.6%);
   border: 1px solid var(--line); border-radius: 20px;
   display: grid; grid-template-columns: 1fr 1.3fr 1fr; align-items: end; padding: 0 28px;
@@ -1720,14 +1719,14 @@ label input:focus { border-color: var(--blue); }
 .spot .figure svg { opacity: .55; transition: opacity .25s; }
 .spot.talking .figure svg { opacity: 1; }
 /* Figures are large next to their furniture: their faces carry the scene. */
-.figure { position: relative; width: 96px; height: 96px; margin-bottom: -10px; transition: transform .25s ease-out; }
-.figure svg { width: 96px; height: 96px; }
-.spot.judge .figure { width: 112px; height: 112px; }
-.spot.judge .figure svg { width: 112px; height: 112px; }
+.figure { position: relative; width: 112px; height: 112px; margin-bottom: -8px; transition: transform .25s ease-out; }
+.figure svg { width: 112px; height: 112px; }
+.spot.judge .figure { width: 160px; height: 160px; }
+.spot.judge .figure svg { width: 160px; height: 160px; }
 .figure.blank svg { opacity: .8 !important; }
 .spot.talking .figure { transform: translateY(-5px); }
 .bench, .stand, .table { position: relative; display: grid; place-items: center; border-radius: 8px 8px 0 0; }
-.bench { width: 190px; height: 50px; background: var(--ink); }
+.bench { width: 200px; height: 50px; background: var(--ink); }
 .stand { width: 112px; height: 38px; background: var(--white); border: 1.5px dashed var(--paper); border-bottom: 0; }
 .table { width: 124px; height: 34px; background: var(--paper); }
 .plate { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: var(--white); color: var(--seal); white-space: nowrap; transition: background .2s, color .2s; }
@@ -1845,7 +1844,7 @@ label input:focus { border-color: var(--blue); }
 .door-fig { width: 132px; height: 132px; margin-bottom: -14px; animation: judgeRise .9s cubic-bezier(.2,.8,.2,1) .5s both; position: relative; z-index: 0; }
 .door-fig svg { width: 132px; height: 132px; }
 .door-bench { position: relative; z-index: 1; width: 340px; max-width: 86vw; height: 76px; border-radius: 12px 12px 0 0; background: var(--ink); display: grid; place-items: center; }
-.door-bench .plate { font-size: 13px; padding: 4px 12px; background: rgba(255,255,255,.12); color: var(--white); }
+.door-bench .plate { font-size: 13px; padding: 4px 12px; background: rgba(255,255,255,.12); color: var(--white); max-width: 90%; overflow: hidden; text-overflow: ellipsis; }
 .door-ask { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 420px; max-width: 100%; animation: in .4s ease-out 1.5s both; }
 .door-ask { width: 460px; }
 .door-ask .bubble { margin: 0; font-size: 17px; font-weight: 600; padding: 12px 16px; background: var(--white); border: 1px solid var(--line); border-radius: 14px; }
@@ -1878,20 +1877,17 @@ label input:focus { border-color: var(--blue); }
 @keyframes judgeRise { from { opacity: 0; transform: translateY(70px); } }
 @keyframes thud { 30% { transform: translateY(3px); } }
 /* Exhibit A, on the courtroom wall */
-.exhibit { position: absolute; top: 8px; left: 12px; z-index: 1; display: flex; align-items: center; gap: 8px; max-width: 210px; padding: 4px 10px 4px 4px; background: var(--white); border: 1px solid var(--line); border-radius: 9px; opacity: 0; transform: translateY(-6px); transition: opacity .4s, transform .4s ease-out; }
+.exhibit { position: absolute; top: 10px; left: 12px; z-index: 1; display: flex; align-items: center; gap: 8px; max-width: 220px; padding: 6px 12px; background: var(--white); border: 1px solid var(--line); border-radius: 9px; opacity: 0; transform: translateY(-6px); transition: opacity .4s, transform .4s ease-out; }
 .exhibit.in { opacity: 1; transform: none; }
-.ex-img { width: 30px; height: 30px; flex: none; border-radius: 7px; background: var(--line); display: grid; place-items: center; overflow: hidden; color: var(--seal); }
-.ex-img img { width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .3s; }
-.ex-img.loaded { background: var(--white); }
-.ex-img.loaded img { opacity: 1; }
-.ex-img.loading { animation: exPulse 1.6s ease-in-out 3; }
-@keyframes exPulse { 50% { opacity: .55; } }
-@media (prefers-reduced-motion: reduce) { .ex-img.loading { animation: none; } .ex-img img { transition: none; } }
+.ex-img { width: 30px; height: 30px; flex: none; border-radius: 7px; background: var(--white); display: grid; place-items: center; overflow: hidden; color: var(--seal); }
+.ex-img img { width: 100%; height: 100%; object-fit: contain; }
 .exhibit.read { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-tint); transition: box-shadow .3s, border-color .3s; }
 .ex-img svg { width: 18px; height: 18px; }
 .ex-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
 .ex-text small { font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--gold-deep); }
-.ex-text b { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ex-text b { font-size: 11px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.exhibit.has-img { padding-left: 6px; }
+.ex-img { animation: fade .3s ease-out; }
 .ex-text span { font-size: 11px; color: var(--seal); }
 .name-pick { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
 .name-pick .select { position: relative; display: inline-flex; flex-direction: row; align-items: center; gap: 0; }

@@ -69,10 +69,14 @@
     ["short-grey-s3", "s3", "short", "grey", true],
   ];
 
-  // Flat figure in the design-system palette.
+  // Flat figure in the design-system palette. The head is drawn at 1.4x and
+  // the body at 0.8x, so the head reads bigger than the body.
+  const HEAD_T = "translate(32 27) scale(1.4) translate(-32 -25)";
+  const BODY_T = "translate(32 64) scale(0.8) translate(-32 -64)";
   const person = (body, extra = "", top = "", skin = SKIN.s2) => {
     const ink = inkFor(skin);
-    return `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M10 64c0-14 9.5-22 22-22s22 8 22 22z" fill="${body}"/>${extra}<circle cx="32" cy="25" r="12" fill="${skin}"/><circle cx="27.5" cy="25" r="1.6" fill="${ink}"/><circle cx="36.5" cy="25" r="1.6" fill="${ink}"/><path d="M28.5 30q3.5 2.6 7 0" fill="none" stroke="${ink}" stroke-width="1.5" stroke-linecap="round"/>${top}</svg>`;
+    // Big head, small body: the face carries the expression.
+    return `<svg viewBox="0 0 64 64" aria-hidden="true"><g transform="${BODY_T}"><path d="M10 64c0-14 9.5-22 22-22s22 8 22 22z" fill="${body}"/>${extra}</g><g transform="${HEAD_T}"><circle cx="32" cy="25" r="12" fill="${skin}"/><circle cx="27.5" cy="25" r="1.6" fill="${ink}"/><circle cx="36.5" cy="25" r="1.6" fill="${ink}"/><path d="M28.5 30q3.5 2.6 7 0" fill="none" stroke="${ink}" stroke-width="1.5" stroke-linecap="round"/>${top}</g></svg>`;
   };
 
   const head = ([, skin, hair, color, glasses]) => ({ skin: SKIN[skin], top: HAIR[hair](HAIR_COLOR[color]) + (glasses ? GLASSES : "") });
@@ -100,7 +104,7 @@
   // Until the defendant makes a character: a blank grey placeholder with no
   // face, like a default profile picture. Unsatisfying on purpose.
   const blank = () =>
-    `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M10 64c0-14 9.5-22 22-22s22 8 22 22z" fill="#C6CCD3"/><circle cx="32" cy="25" r="12" fill="#DADADC"/></svg>`;
+    `<svg viewBox="0 0 64 64" aria-hidden="true"><g transform="${BODY_T}"><path d="M10 64c0-14 9.5-22 22-22s22 8 22 22z" fill="#C6CCD3"/></g><g transform="${HEAD_T}"><circle cx="32" cy="25" r="12" fill="#DADADC"/></g></svg>`;
 
   globalThis.gicCast = { SKIN, HAIR_COLOR, HAIR, JUDGES, WITNESSES, person, judge, witness, defendant, blank, castCourt };
 })();

@@ -40,13 +40,15 @@
   }
 
   // The jab after the judge reads Exhibit A. {name} = "Mr. Moneybags".
+  // "Let the record reflect" is real courtroom language (NC and NV court
+  // interpreter phrase lists).
   const JABS = {
     many: [
       "I guess you don't like {plural}, {name}, as that's {n} {plural}.",
-      "That's {n} {plural}, {name}. The court will remember that.",
-      "You could have had {n} {plural}, {name}. The court notes it.",
+      "Let the record reflect: that's {n} {plural}, {name}.",
+      "You could have had {n} {plural}, {name}. Let the record show it.",
     ],
-    one: ["I guess you don't like {plural}, {name}. That's {thing}.", "That's {thing}, {name}. The court will remember that."],
+    one: ["I guess you don't like {plural}, {name}. That's {thing}.", "Let the record reflect: that's {thing}, {name}."],
     half: ["That's half of {thing}, {name}. The other half is your business."],
   };
 

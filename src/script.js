@@ -224,7 +224,7 @@
       head: "Court notice",
       // A summons from the court. The gas figure appears once, in the charge.
       kicker: "Summons",
-      charge: (g, what, price) => `Your case: spending ${g ? g.text : price} on ${what}.`,
+      charge: (g, what, price) => `You are charged with: possibly choosing ${what} over ${g ? g.text : `keeping ${price}`}.`,
       body: () => "Plead your case and get the court's opinion before you buy.",
       start: "Take it to court",
       time: "2 min",
@@ -241,7 +241,7 @@
     name: "Forgive me, what's your name, defendant?",
     // "We are here in the matter of ..." is how real judges open a hearing.
     item: (f) => `We are here in the matter of ${f.defendant} v. ${f.the}, ${f.price}.`,
-    how: (f) => `And how will ${f.it} make your life better, defendant?`,
+    how: (f) => `How will ${f.it} make your life better, defendant?`,
     howPlaceholder: "How, exactly: when, where, how often you'll use it",
     objection: "Not why, defendant. I asked how.",
     // A non-answer ("um", "idk") gets its own line: the judge heard it.
