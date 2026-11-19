@@ -172,6 +172,17 @@
 
   // ---------- storage ----------
 
+  // After the extension is reloaded, the copy of this script in an already-open
+  // tab is cut off: chrome.* calls throw "Extension context invalidated". Some
+  // Chromium browsers (Dia) still report chrome.runtime.id, so actually try a call.
+  function alive() {
+    try {
+      return !!chrome.runtime?.getManifest?.() && !!chrome.storage?.local;
+    } catch {
+      return false;
+    }
+  }
+
   const getStore = () => chrome.storage.local.get({ settings: {}, history: [], neverItems: [], wishlist: [] });
 
   const savedTotal = (settings, history) =>
@@ -282,6 +293,15 @@
       if (document.body) document.body.style.overflow = savedOverflow[1];
       savedOverflow = null;
     }
+  }
+  // A small note in the corner that doesn't block anything.
+  function toast(text) {
+    const el = document.createElement("div");
+    el.setAttribute("role", "status");
+    el.style.cssText = "position:fixed;top:16px;right:16px;z-index:2147483647;max-width:320px;padding:12px 14px;border-radius:12px;background:#2B2F36;color:#fff;font:14px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.2)";
+    el.textContent = text;
+    document.documentElement.appendChild(el);
+    setTimeout(() => el.remove(), 6000);
   }
   function clearUI() {
     layer.innerHTML = "";
@@ -1232,14 +1252,16 @@
     say("judge", r0.line);
     await readPause(r0.line);
     if (r0.price_line) {
+      if (state.left) return;
       judgeSpot.classList.add("eyebrow"); // set_expression: reading the exhibit
-      $("#exhibit").classList.add("read");
+      $("#exhibit")?.classList.add("read");
       moment("The judge leans in to read Exhibit A.");
       await wait(900);
       say("judge", r0.price_line);
       await readPause(r0.price_line);
       judgeSpot.classList.remove("eyebrow");
-      $("#exhibit").classList.remove("read");
+      $("#exhibit")?.classList.remove("read");
+      if (state.left) return;
     }
     say("judge", r0.question, { question: true });
 
@@ -1575,8 +1597,9 @@
       // After the extension is reloaded in chrome://extensions, the copy of this
       // script already running in an open tab loses its connection (chrome.storage
       // becomes undefined). Don't block checkout; ask for a page refresh instead.
-      if (!chrome.runtime?.id || !chrome.storage?.local) {
+      if (!alive()) {
         log("The extension was reloaded. Refresh this page to bring the court back. Letting this click through.");
+        toast("Guilty If Charged was updated. Refresh this page to bring the court back.");
         return;
       }
       e.preventDefault();

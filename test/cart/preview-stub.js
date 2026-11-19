@@ -7,6 +7,6 @@ const store = {
 if (new URLSearchParams(location.search).has("nogoal")) store.settings = { savedSoFar: "84", mode: "scripted" };
 window.chrome = {
   storage: { local: { get: async (d) => ({ ...(typeof d === "object" ? d : {}), ...store }), set: async (o) => Object.assign(store, o) } },
-  runtime: { id: "preview", sendMessage: async () => ({ ok: false, error: "preview" }) },
+  runtime: { id: "preview", getManifest: () => ({ name: "preview" }), sendMessage: async () => ({ ok: false, error: "preview" }) },
 };
 document.addEventListener("submit", (e) => e.preventDefault());
