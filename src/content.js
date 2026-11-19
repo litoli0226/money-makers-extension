@@ -1068,9 +1068,9 @@
     // Time-left bar: an estimate in steps, not a running clock. It only moves
     // forward; an objection adds time to the estimate but never empties the bar.
     // Seconds per step (rough; tune after timing testers, R3).
-    const EST = { name: 8, how: 30, objection: 25, gift: 8, witness: 14, advocacy: 20, values: 20, closing: 20, deliberate: 8 };
+    const EST = { name: 8, how: 30, objection: 25, gift: 8, witness: 14, advocacy: 20, closing: 20, deliberate: 8 };
     // Two "how" answers before the witness, either way: an objection retry or a follow-up.
-    const eta = { done: 0, left: ["name", "how", "witness", "advocacy", "values", "closing", "deliberate"], shown: 0 };
+    const eta = { done: 0, left: ["name", "how", "witness", "advocacy", "closing", "deliberate"], shown: 0 };
     function drawEta(label) {
       const leftSec = eta.left.reduce((t, k) => t + EST[k], 0);
       const frac = eta.done / (eta.done + leftSec || 1);
@@ -1327,10 +1327,9 @@
     //     objection that presses for the mechanism (Fernbach et al. 2013).
     //  4. the expert witness, called on the topic the defendant raised, quoting them.
     //  5. advocacy: what would you tell a friend? (hypocrisy induction, first half)
-    //  6. values: you'd want to be good to her; what else could $X do for her?
-    //     (consistency with their own advice + an opportunity-cost cue)
-    //  7. closing: the court says it's about to deliberate and asks a calibrated
-    //     "what" question, so the defendant gets one last say.
+    //  6. closing, only if the court isn't leaning toward approval: the judge
+    //     says where it leans, holds them to their advice (consistency), and
+    //     asks one calibrated "what" question.
 
     // ----- 3. Objection, once, only after a reason (R7) -----
     let r1 = await howAnswer(true);
@@ -1421,18 +1420,23 @@
     }
     if (state.left) return;
 
-    // ----- 6. Values: held to their advice, inside something they care about.
-    // Skipped after an objection when the C1 switch is on, to keep it short. -----
-    if (flow.mvpAskRespond(state, settings)) {
-      const { question } = globalThis.gicScriptedMvp("mvp_values_q", ctx());
-      await turn("values", question, "Your answer");
-    } else stepDrop("values");
-    if (state.left) return;
-
-    // ----- 7. Closing: the court signals deliberation, one last say -----
+    // ----- 6. Closing, only when the court is not yet leaning toward approval:
+    // the judge says where it leans (so the defendant knows what to fight) and
+    // asks one calibrated question. Leaning approve: no question, straight to
+    // deliberation. Also skipped after an objection when the C1 switch is on. -----
     {
-      const { question } = globalThis.gicScriptedMvp("mvp_closing_q", ctx());
-      await turn("closing", question, "Your last word to the court");
+      const lean = flow.mvpVerdict(state);
+      if (lean !== "approve" && flow.mvpAskRespond(state, settings)) {
+        drawEta("Last question");
+        const { question } = globalThis.gicScriptedMvp("mvp_closing_q", ctx({ lean }));
+        await turn("closing", question, "Your last word to the court");
+      } else {
+        stepDrop("closing");
+        drawEta("About to deliberate");
+        const { line } = globalThis.gicScriptedMvp("mvp_closing_q", ctx({ lean }));
+        say("judge", line);
+        await readPause(line);
+      }
     }
     if (state.left) return;
 

@@ -123,8 +123,7 @@ Otherwise set "finding_id" to "none" (simple arithmetic from the case file is fi
     task: `Stage: mvp_respond. The defendant just answered the judge ("question" and "answer" in the case file; "step" says which question).
 Score "strength", "engaged", "unsure" and "claim" as in the answer stage rubric, with these steps:
 - "advocacy" (what they'd tell a friend in the same spot): advice to wait, skip or think it over is "weak" (it argues against their own purchase); advice to go ahead, with a reason, is "good".
-- "values" (what else the money could do for the person they care about): naming another use for the money is "weak"; explaining why this item is still the best use is "good" or "strong".
-- "closing" (what the court should weigh before deliberating): score as a normal answer.
+- "closing" (the judge said where the court leans and asked what should change its mind): score as a normal answer.
 Leave "acknowledge" empty (the court goes straight to deliberation).
 Set "flag" as in mvp_how: "violent", "hateful", "sexual", "self_harm" or "none".`,
     schema: {

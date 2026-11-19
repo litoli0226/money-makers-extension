@@ -227,7 +227,7 @@
       charge: (g, what, price) => `What makes ${what} more important than ${g ? g.text : price ? `keeping ${price}` : "keeping your money"}, defendant?`,
       body: () => "Get the court's opinion before you buy.",
       start: "Plead my case",
-      time: "3 min",
+      time: "2 min",
       skip: "Skip court",
       never: "Don't ask about this item",
       // Just-in-time privacy notice (Chrome Web Store "prominent disclosure"):
@@ -307,7 +307,8 @@
     //  1. advocacy: the defendant advises a friend in the same spot. First half
     //     of hypocrisy induction (Aronson, Fried & Stone 1991; Stone et al. 1994:
     //     advocate a standard, then be made mindful of your own lapses).
-    //  2. values: the judge holds them to their own advice (Cialdini's
+    //  2. (cut: a separate values/opportunity-cost question was one too many)
+    //     the closing holds them to their own advice instead (Cialdini's
     //     consistency) and asks what else the money could do, inside a value
     //     they hold (opportunity cost cues: Frederick et al. 2009).
     //  3. closing: the court says it's about to deliberate and asks a calibrated
@@ -317,15 +318,15 @@
       usage: (f) => `Defendant, say a friend swears they'll use ${f.noun} ${f.freqWords}. What do you tell them?`,
       other: (f) => `Defendant, say a friend is about to spend ${f.price} on ${f.noun}. What do you tell them?`,
     },
-    values: {
-      gift: (f) => `${f.adviceLine}You want to be good to ${f.recipientObj}. What else could ${f.price} do for ${f.recipientObj}?`,
-      other: (f) => `${f.adviceLine}What else could ${f.price} do for you, or for someone you care about, this month?`,
+    // Last turn: the judge says where the court leans, holds the defendant to
+    // the advice they gave a friend when it cut against them (consistency),
+    // and asks one calibrated "what" question (Voss).
+    closing: {
+      denied: (f) => `${f.against ? `${f.adviceSaid} ` : ""}The court is leaning toward denying this. What should change its mind?`,
+      sleep: (f) => `${f.against ? `${f.adviceSaid} ` : ""}The court is leaning toward making you sleep on it. What should change its mind?`,
+      approve: () => "The court has heard enough, and it liked what it heard.",
+      heard: () => "The court has heard enough.",
     },
-    // One last turn before deliberation: a calibrated "what" question.
-    closing: [
-      () => "The court is about to deliberate. What should it weigh most before it decides?",
-      (f) => `The court is about to deliberate. What would have to be true for ${f.it} to be worth ${f.price}?`,
-    ],
     respondQ: {
       research: (f) => (f.gift ? "Defendant, is this gift for them, or for you?" : "Ah, but that must be different for you, right, defendant?"),
       item: (f) => `Defendant, ${f.the} has spoken. Your response?`,
@@ -338,9 +339,9 @@
     reason: {
       approve: (f) => `${f.bestQuote ? `You said "${f.bestQuote}" and backed it up.` : "You made your case and backed it up."} Case approved.`,
       sleep: (f) =>
-        f.advice ? `${f.adviceSaid} Sleep on it, and take your own advice. ${f.The} will still be here tomorrow.` : `Your case has a point, but not a finished one. Sleep on it: ${f.the} will still be here tomorrow.`,
+        f.against ? `${f.adviceSaid} Sleep on it, and take your own advice. ${f.The} will still be here tomorrow.` : `Your case has a point, but not a finished one. Sleep on it: ${f.the} will still be here tomorrow.`,
       denied: (f) =>
-        f.advice ? `${f.adviceSaid} The court is taking your advice. That's ${f.price} you keep.` : `Your case sounded more like a want than a need right now. That's ${f.price} you keep.`,
+        f.against ? `${f.adviceSaid} The court is taking your advice. That's ${f.price} you keep.` : `Your case sounded more like a want than a need right now. That's ${f.price} you keep.`,
     },
     // The invitation at the end: set a goal so the court can hold you to it.
     // It opens the team's goal sheet (Figma 16.1). Built from the trial.
@@ -380,6 +381,8 @@
     const a = advice.replace(/^(honestly|well|um+|i mean|probably|i guess)[,\s]+/i, "");
     const m = a.match(/^(?:i'?d|i would|i'd probably|i would probably)\s+(?:tell|say to|advise)\s+(?:them|him|her|my friend|the friend)\s*(?:that\s+)?(.+)$/i);
     if (m) return `You'd tell a friend ${m[1]}.`;
+    const m2 = a.match(/^(?:maybe\s+|that\s+)?(they|he|she)\s+(should|shouldn'?t|could|might|need to)\s+(.+)$/i);
+    if (m2) return `You'd tell a friend they ${m2[2].toLowerCase()} ${m2[3]}.`;
     return `You'd tell a friend: "${a}."`;
   }
   function mvpFacts(ctx) {
@@ -392,7 +395,7 @@
     const who = rx ? rx[1] : null;
     const pron = who ? PRONOUN[who] || "them" : "them";
     const nounRaw = globalThis.gicPrices?.itemNoun(ctx.item?.label) || "this item";
-    const advice = ctx.advice ? String(ctx.advice).trim().replace(/[.!?]+$/, "").slice(0, 90) : "";
+    const advice = ctx.advice ? String(ctx.advice).trim().replace(/[.!?…\s]+$/, "").slice(0, 90) : "";
     // Usage math from the defendant's own words ("every night").
     const fr = answers.map((a) => frequency(a.text)).find(Boolean);
     const total = ctx.item?.total;
@@ -407,7 +410,7 @@
       noun: nounRaw,
       theirRecipient: who ? `their ${who}` : "someone they care about",
       recipientObj: who ? pron : "them",
-      adviceLine: advice ? `${youdTell(advice)} The court will hold you to that. ` : "",
+      adviceLine: advice ? `${youdTell(advice)} ` : "",
       adviceSaid: advice ? youdTell(advice) : "",
       advice,
       freq: fr,
@@ -506,8 +509,11 @@
         return { says: LINES.witness[ctx.witness.id](f) };
       }
       case "mvp_closing_q": {
+        const adv = (ctx.answers || []).find((a) => a.step === "advocacy");
+        const f3 = { ...f, against: !!(f.advice && adv && adv.strength === "weak") };
         const c = MVP_LINES.closing;
-        return { question: c[Math.floor(Math.random() * c.length)](f) };
+        const lean = ctx.lean || "sleep";
+        return { question: (c[lean] || c.sleep)(f3), line: lean === "approve" ? c.approve() : c.heard() };
       }
       case "mvp_bridge":
         return { line: MVP_LINES.bridge };
@@ -515,10 +521,6 @@
         return { topic: (MVP_LINES.witness[ctx.witness.id].topic || (() => "an expert witness"))(f) };
       case "mvp_advocacy_q":
         return { question: (f.gift ? MVP_LINES.advocacy.gift : f.freq ? MVP_LINES.advocacy.usage : MVP_LINES.advocacy.other)(f) };
-      case "mvp_values_q":
-        return { question: (f.gift ? MVP_LINES.values.gift : MVP_LINES.values.other)(f) };
-      case "mvp_respond_q":
-        return { question: (MVP_LINES.respondQ[ctx.witness.id] || MVP_LINES.respondQ.future)(f) };
       case "mvp_respond": {
         const e = evaluate(ctx.answer);
         const t = String(ctx.answer || "").toLowerCase();
@@ -544,7 +546,7 @@
         const v = ctx.verdict;
         const gift = ctx.gift === true || (ctx.gift == null && (ctx.answers || []).some((a) => a.claim === "gift"));
         return {
-          reason: MVP_LINES.reason[v]({ ...f, bestQuote: f2.bestQuote }),
+          reason: MVP_LINES.reason[v]({ ...f, bestQuote: f2.bestQuote, against: !!(f.advice && (ctx.answers || []).some((a) => a.step === "advocacy" && a.strength === "weak")) }),
           signup: gift ? MVP_LINES.signup.gift(f) : MVP_LINES.signup[v]({ ...f, bestQuote: f2.bestQuote }),
         };
       }
